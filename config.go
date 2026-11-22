@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/pengtang1024/kore-plugin-container/internal/containerop"
 	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
@@ -26,15 +28,17 @@ type manifest struct {
 }
 
 // config 是插件运行期配置：环境变量 + 内嵌清单，不读任何配置文件。
-// 容器插件不持有宿主运行时连接信息——运行时由使用者在宿主上自行管理。
+// 容器插件只持有 docker CLI 路径与保护名单，不持有 daemon 连接凭据。
 type config struct {
-	socket       string
-	id           string
-	token        string
-	version      string
-	requiresKore string
-	capabilities []string
-	startedAt    time.Time
+	socket              string
+	id                  string
+	token               string
+	version             string
+	requiresKore        string
+	capabilities        []string
+	dockerBin           string
+	protectedContainers []string
+	startedAt           time.Time
 }
 
 // loadConfig 读取协议环境变量并解析内嵌 info.json。
@@ -46,14 +50,26 @@ func loadConfig() (config, error) {
 	if m.Protocol != pluginapi.Protocol {
 		return config{}, fmt.Errorf("info.json.protocol=%q 与 SDK 协议 %q 不一致", m.Protocol, pluginapi.Protocol)
 	}
+	protected, err := parseProtectedContainers(os.Getenv(containerop.EnvProtectedContainers))
+	if err != nil {
+		return config{}, err
+	}
+	// 默认把承载插件自身的容器纳入保护，避免 manage 的容器把 kore 一起停掉。
+	protected = dedupeStrings(append(protected, containerop.DetectSelfContainerIDs()...))
+	dockerBin := strings.TrimSpace(os.Getenv(containerop.EnvDockerBin))
+	if dockerBin == "" {
+		dockerBin = containerop.DefaultDockerBin
+	}
 	cfg := config{
-		socket:       os.Getenv("KORE_PLUGIN_SOCK"),
-		id:           os.Getenv("KORE_PLUGIN_ID"),
-		token:        os.Getenv("KORE_PLUGIN_TOKEN"),
-		version:      m.Version,
-		requiresKore: m.RequiresKore,
-		capabilities: m.Capabilities,
-		startedAt:    time.Now(),
+		socket:              os.Getenv("KORE_PLUGIN_SOCK"),
+		id:                  os.Getenv("KORE_PLUGIN_ID"),
+		token:               os.Getenv("KORE_PLUGIN_TOKEN"),
+		version:             m.Version,
+		requiresKore:        m.RequiresKore,
+		capabilities:        m.Capabilities,
+		dockerBin:           dockerBin,
+		protectedContainers: protected,
+		startedAt:           time.Now(),
 	}
 	if cfg.id == "" {
 		cfg.id = m.ID
@@ -62,4 +78,42 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("缺少环境变量 KORE_PLUGIN_SOCK")
 	}
 	return cfg, nil
+}
+
+// parseProtectedContainers 解析 KORE_PROTECTED_CONTAINERS（逗号分隔的名称 / ID）；
+// 空值返回 nil，非法标识启动即报错，不静默丢弃。
+func parseProtectedContainers(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	seen := make(map[string]bool, 4)
+	containers := make([]string, 0, 4)
+	for _, token := range strings.Split(raw, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		if perr := containerop.ValidateID(token); perr != nil {
+			return nil, fmt.Errorf("%s 含非法标识 %q: %s", containerop.EnvProtectedContainers, token, perr.Message)
+		}
+		if !seen[token] {
+			seen[token] = true
+			containers = append(containers, token)
+		}
+	}
+	return containers, nil
+}
+
+// dedupeStrings 去重并保留首次出现顺序。
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }

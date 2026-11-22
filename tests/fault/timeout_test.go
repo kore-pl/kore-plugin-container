@@ -1,14 +1,17 @@
+//go:build linux
+
 package fault
 
 import (
 	"testing"
 
 	"github.com/pengtang1024/kore-plugin-container/internal/containerop"
+	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
-// TestTimeoutFault 注入调用超时，期望两方法返回 E_UPSTREAM。
+// TestTimeoutFault 注入调用超时，期望七个方法返回 E_UPSTREAM。
 func TestTimeoutFault(t *testing.T) {
-	assertFault(t, containerop.FaultTimeout, "E_UPSTREAM", "超时")
+	assertFault(t, containerop.FaultTimeout, pluginapi.E_UPSTREAM, "超时")
 }
 
 // TestTimeoutSanity 无故障时方法应正常返回，防止超时测试假通过。

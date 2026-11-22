@@ -1,45 +1,77 @@
-// Package fault 对 container 插件做基础级故障注入，验证方法级错误返回。
-// 每个用例向 containerop.Call 的执行面注入一种故障，断言返回的结构化错误码。
+//go:build linux
+
+// Package fault 对 container 插件做四类故障注入（kill / timeout / disk / cgroup）：
+// 每个用例把可控执行面替换为始终返回 FaultError 的实现，断言七个方法都把执行面
+// 故障映射成结构化协议错误码，而不是 panic 或伪成功。
 package fault
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/pengtang1024/kore-plugin-container/internal/containerop"
-	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
-// faultExecutor 按注入类别让每个方法都失败，模拟运行时故障。
+// faultExecutor 按注入类别让每个执行面方法都失败。
 type faultExecutor struct {
 	kind containerop.FaultKind
 }
 
-func (f faultExecutor) List() ([]containerop.Container, error) {
+func (f faultExecutor) List(bool) ([]containerop.ContainerEntry, error) {
 	return nil, containerop.NewFaultError(f.kind, "list 执行面故障")
 }
 
-func (f faultExecutor) Inspect(id string) (*containerop.Container, error) {
+func (f faultExecutor) Inspect(string) (*containerop.InspectResult, error) {
 	return nil, containerop.NewFaultError(f.kind, "inspect 执行面故障")
 }
 
-// methods 是两类故障注入覆盖的方法及其合法参数。
+func (f faultExecutor) Logs(string, int) (containerop.LogsResult, error) {
+	return containerop.LogsResult{}, containerop.NewFaultError(f.kind, "logs 执行面故障")
+}
+
+func (f faultExecutor) Start(string) error {
+	return containerop.NewFaultError(f.kind, "start 执行面故障")
+}
+
+func (f faultExecutor) Stop(string, int) error {
+	return containerop.NewFaultError(f.kind, "stop 执行面故障")
+}
+
+func (f faultExecutor) Restart(string, int) error {
+	return containerop.NewFaultError(f.kind, "restart 执行面故障")
+}
+
+func (f faultExecutor) Stats(string) (containerop.StatsResult, error) {
+	return containerop.StatsResult{}, containerop.NewFaultError(f.kind, "stats 执行面故障")
+}
+
+func (f faultExecutor) Resolve(string) (containerop.ContainerRef, error) {
+	return containerop.ContainerRef{}, containerop.NewFaultError(f.kind, "resolve 执行面故障")
+}
+
+// methods 是故障注入覆盖的七个方法及其合法参数。
 var methods = []struct {
 	name   string
 	method string
 	params string
 }{
-	{"list", "container.list", `{}`},
+	{"list", "container.list", `{"all":true}`},
 	{"inspect", "container.inspect", `{"id":"web"}`},
+	{"logs", "container.logs", `{"id":"web","tail":10}`},
+	{"start", "container.start", `{"id":"web"}`},
+	{"stop", "container.stop", `{"id":"web","confirm":true}`},
+	{"restart", "container.restart", `{"id":"web","confirm":true}`},
+	{"stats", "container.stats", `{"id":"web"}`},
 }
 
-// assertFault 对每个方法注入故障，断言返回 nil 结果 + 预期错误码与类别关键词。
+// assertFault 对七个方法注入同一类故障，断言 nil 结果 + 预期错误码与类别关键词。
 func assertFault(t *testing.T, kind containerop.FaultKind, wantCode, wantHint string) {
 	t.Helper()
-	exec := faultExecutor{kind: kind}
 	for _, m := range methods {
 		t.Run(m.name, func(t *testing.T) {
-			result, perr := containerop.Call(m.method, json.RawMessage(m.params), exec)
+			result, perr := containerop.Call(m.method, json.RawMessage(m.params),
+				containerop.Options{GOOS: "linux"}, faultExecutor{kind: kind})
 			if perr == nil {
 				t.Fatalf("%s 注入 %s 后未返回错误（结果=%s）", m.method, kind, result)
 			}
@@ -49,47 +81,53 @@ func assertFault(t *testing.T, kind containerop.FaultKind, wantCode, wantHint st
 			if perr.Code != wantCode {
 				t.Fatalf("%s 错误码=%q，期望 %q（message=%q）", m.method, perr.Code, wantCode, perr.Message)
 			}
-			if !contains(perr.Message, wantHint) {
+			if !strings.Contains(perr.Message, wantHint) {
 				t.Fatalf("%s 错误信息 %q 未含类别关键词 %q", m.method, perr.Message, wantHint)
 			}
 		})
 	}
 }
 
-// contains 是 strings.Contains 的本地封装，避免每个 fault 文件重复 import strings。
-func contains(s, sub string) bool {
-	if len(sub) > len(s) {
-		return false
-	}
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
+// healthyExecutor 是无故障执行面：证明故障断言不是"永远失败"的假通过。
+type healthyExecutor struct{}
+
+func (healthyExecutor) List(bool) ([]containerop.ContainerEntry, error) {
+	return []containerop.ContainerEntry{{ID: "web", Name: "web", State: "running"}}, nil
 }
 
-// sanityNoFault 验证无故障时方法正常返回，证明故障断言不是"永远失败"的假通过。
+func (healthyExecutor) Inspect(string) (*containerop.InspectResult, error) {
+	return &containerop.InspectResult{ID: strings.Repeat("a", 64), Name: "web", State: containerop.InspectState{Status: "running"}}, nil
+}
+
+func (healthyExecutor) Logs(string, int) (containerop.LogsResult, error) {
+	return containerop.LogsResult{ID: "web", Lines: []string{"ok"}}, nil
+}
+
+func (healthyExecutor) Start(string) error { return nil }
+
+func (healthyExecutor) Stop(string, int) error { return nil }
+
+func (healthyExecutor) Restart(string, int) error { return nil }
+
+func (healthyExecutor) Stats(string) (containerop.StatsResult, error) {
+	return containerop.StatsResult{ID: "web", PIDs: 1}, nil
+}
+
+func (healthyExecutor) Resolve(string) (containerop.ContainerRef, error) {
+	return containerop.ContainerRef{ID: strings.Repeat("a", 64), Name: "web"}, nil
+}
+
+// sanityNoFault 验证无故障时七个方法均正常返回。
 func sanityNoFault(t *testing.T) {
 	t.Helper()
 	for _, m := range methods {
-		result, perr := containerop.Call(m.method, json.RawMessage(m.params), nil)
+		result, perr := containerop.Call(m.method, json.RawMessage(m.params),
+			containerop.Options{GOOS: "linux"}, healthyExecutor{})
 		if perr != nil {
-			t.Fatalf("无故障时 %s 意外返回错误: %v", m.method, perr)
+			t.Fatalf("无故障时 %s 意外返回错误: %+v", m.method, perr)
 		}
 		if len(result) == 0 {
 			t.Fatalf("无故障时 %s 返回空结果", m.method)
 		}
-	}
-}
-
-// verifyErrorContract 断言错误体是标准协议结构（含 code 字段）。
-func verifyErrorContract(t *testing.T, perr *pluginapi.Error) {
-	t.Helper()
-	if perr == nil {
-		t.Fatal("错误体为 nil")
-	}
-	if perr.Code == "" || perr.Message == "" {
-		t.Fatalf("错误体字段不完整: %+v", perr)
 	}
 }

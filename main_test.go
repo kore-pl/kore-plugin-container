@@ -122,7 +122,10 @@ func TestServeShutdown(t *testing.T) {
 	pluginConn, kernelConn := net.Pipe()
 	defer func() { _ = kernelConn.Close() }()
 	done := make(chan error, 1)
-	go func() { done <- serve(pluginConn, testConfig(), testLogger()); _ = pluginConn.Close() }()
+	go func() {
+		done <- serve(pluginConn, testConfig(), testRuntime(newFakeExecutor()), testLogger())
+		_ = pluginConn.Close()
+	}()
 
 	// 每个 shutdown 请求配对读一次响应帧（id/reqID 原样回显校验）。
 	sendShutdown(t, kernelConn, "id-1", "r-1")

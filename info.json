@@ -6,12 +6,12 @@
   "lifecycle": "lazy",
   "depth_level": "basic",
   "entry": "bin/container",
-  "capabilities": ["system:read"],
+  "capabilities": ["system:read", "system:admin"],
   "triggers": [],
   "requires_kore": ">=0.1.0 <0.2.0",
   "resources": {"memory_mb": 6, "cpu_quota": "15%", "pids_max": 16},
   "depends_on": [],
   "conflicts": [],
   "scenario_tags": ["ops"],
-  "size_bytes": 1264031
+  "size_bytes": 1489500
 }

@@ -1,63 +1,96 @@
 package containerop
 
 import (
-	"encoding/hex"
+	"fmt"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
-// ValidateID 校验容器标识：接受 64 位小写 hex 的完整 ID，或合法的容器名称/短标识。
-// 名称规则：1-128 位 [a-zA-Z0-9][a-zA-Z0-9_.-]*，不允许空白与路径穿越字符。
-// 只做字符串校验，不访问 daemon、不做任何运行时调用。
-func ValidateID(raw string) (kind string, perr *pluginapi.Error) {
+// containerIDRE 是容器标识的唯一合法形状（名称 / 完整 ID / 短 ID 共用）：
+// 首字符必须是字母或数字，其后仅允许字母、数字、下划线、点与连字符，总长 1..128。
+// 该正则同时封死命令注入：空白、斜杠、分号、$()、引号、NUL、以 "-" 开头全部不匹配。
+var containerIDRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+
+// hex64RE 从 cgroup / mountinfo 文本里提取 64 位小写 hex 容器 ID。
+var hex64RE = regexp.MustCompile(`[0-9a-f]{64}`)
+
+// hex12RE 匹配 Docker 默认 HOSTNAME 形态（12 位小写 hex 短 ID）。
+var hex12RE = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
+// ValidateID 校验容器标识形状；不访问 daemon、不执行任何运行时调用。
+func ValidateID(raw string) *pluginapi.Error {
 	if raw == "" {
-		return "", invalid("容器标识不能为空")
+		return invalid("容器标识不能为空")
 	}
-	if len(raw) == 64 {
-		if _, err := hex.DecodeString(raw); err == nil && strings.ToLower(raw) == raw {
-			return "id64", nil
-		}
+	if !containerIDRE.MatchString(raw) {
+		return invalid("容器标识非法：须匹配 ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$（拒绝空白、斜杠、分号、$() 等注入字符，且不得以 - 开头）")
 	}
-	if perr := validateName(raw); perr != nil {
-		return "", perr
-	}
-	return "name", nil
+	return nil
 }
 
-// validateName 校验容器名称/短标识形状。
-func validateName(raw string) *pluginapi.Error {
-	if len(raw) > maxNameLen {
-		return invalid("容器名称超过 " + itoa(maxNameLen) + " 字符上限")
-	}
-	first := raw[0]
-	if !isAlnum(first) {
-		return invalid("容器名称必须以字母或数字开头")
-	}
-	for i := 1; i < len(raw); i++ {
-		c := raw[i]
-		if !isAlnum(c) && c != '_' && c != '.' && c != '-' {
-			return invalid("容器名称含非法字符")
+// CheckProtected 判断容器是否命中保护名单。
+// 名单项可以是名称、完整 64 位 ID，或 ≥6 位的十六进制短 ID；命中返回 E_UNAUTHORIZED。
+func CheckProtected(ref ContainerRef, protected []string) *pluginapi.Error {
+	for _, raw := range protected {
+		token := strings.TrimPrefix(strings.TrimSpace(raw), "/")
+		if token == "" {
+			continue
+		}
+		if token == ref.Name || token == ref.ID {
+			return protectedError(ref)
+		}
+		// 短 ID：只对 ≥6 位十六进制做前缀匹配，既覆盖 docker 短 ID，又避免单字符名单误伤全部容器。
+		if len(token) >= 6 && isHex(token) && strings.HasPrefix(ref.ID, strings.ToLower(token)) {
+			return protectedError(ref)
 		}
 	}
 	return nil
 }
 
-func isAlnum(c byte) bool {
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+// protectedError 构造保护名单拒绝错误；只回容器名，不回宿主机路径。
+func protectedError(ref ContainerRef) *pluginapi.Error {
+	return unauthorized(fmt.Sprintf("拒绝操作容器 %q：命中保护名单 %s", ref.Name, EnvProtectedContainers))
 }
 
-// itoa 是本包内最小的正整数转字符串，避免为一个上限值引入 strconv。
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+// DetectSelfContainerIDs 从 /proc/self/cgroup 与 HOSTNAME 推断「承载插件自身的容器」ID。
+// 插件不在容器内（宿主进程）时返回空列表，不猜测、不误伤无关容器。
+func DetectSelfContainerIDs() []string {
+	seen := make(map[string]bool, 2)
+	ids := make([]string, 0, 2)
+	add := func(id string) {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		ids = append(ids, id)
 	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
+	if data, err := os.ReadFile("/proc/self/cgroup"); err == nil {
+		for _, id := range hex64RE.FindAllString(string(data), -1) {
+			add(id)
+		}
 	}
-	return string(buf[i:])
+	if hostname := strings.TrimSpace(os.Getenv("HOSTNAME")); hex12RE.MatchString(hostname) ||
+		len(hostname) == 64 && isHex(hostname) {
+		add(hostname)
+	}
+	return ids
+}
+
+// isHex 判断字符串是否全为十六进制字符（大小写不敏感）。
+func isHex(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' {
+			continue
+		}
+		return false
+	}
+	return true
 }
