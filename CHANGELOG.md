@@ -7,6 +7,7 @@
 - feat: `container.list` 每条新增 `protected` 布尔：命中保护名单的容器由前端展示锁标并禁用启停
 - feat: 保护名单短 ID 改为 ≥6 位十六进制**双向**前缀匹配——名单给完整 ID、`docker ps` 只
   拿到 12 位短 ID 时同样命中
+- feat: `container.inspect` 资源限额新增 `restart_policy`（docker HostConfig.RestartPolicy.Name）
 - test: `TestProtectedListFlag`（stop common-mysql 被 E_UNAUTHORIZED 拒绝 + list 标记）、
   `since` 形状校验、反向短 ID 前缀命中
 

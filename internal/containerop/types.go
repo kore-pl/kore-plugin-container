@@ -132,8 +132,9 @@ type InspectMount struct {
 
 // InspectResources 是容器的资源限额。
 type InspectResources struct {
-	MemoryLimit int64 `json:"memory_limit"`
-	CPUQuota    int64 `json:"cpu_quota"`
+	MemoryLimit   int64  `json:"memory_limit"`
+	CPUQuota      int64  `json:"cpu_quota"`
+	RestartPolicy string `json:"restart_policy"`
 }
 
 // InspectResult 是 container.inspect 的精简结构；health 为空串表示未配置健康检查。

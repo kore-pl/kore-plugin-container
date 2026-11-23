@@ -118,8 +118,11 @@ type rawInspectConfig struct {
 
 // rawInspectHost 是 HostConfig 子结构。
 type rawInspectHost struct {
-	Memory   int64 `json:"Memory"`
-	CPUQuota int64 `json:"CpuQuota"`
+	Memory        int64 `json:"Memory"`
+	CPUQuota      int64 `json:"CpuQuota"`
+	RestartPolicy struct {
+		Name string `json:"Name"`
+	} `json:"RestartPolicy"`
 }
 
 // rawInspectNetwork 是 NetworkSettings 子结构。
@@ -201,9 +204,10 @@ func parseInspectOutput(data []byte) (*InspectResult, error) {
 			IP:    networkIP(raw.Network),
 			Ports: buildPorts(raw.Network.Ports),
 		},
-		Mounts:    mounts,
-		Resources: InspectResources{MemoryLimit: raw.HostConfig.Memory, CPUQuota: raw.HostConfig.CPUQuota},
-		Health:    health,
+		Mounts: mounts,
+		Resources: InspectResources{MemoryLimit: raw.HostConfig.Memory, CPUQuota: raw.HostConfig.CPUQuota,
+			RestartPolicy: raw.HostConfig.RestartPolicy.Name},
+		Health: health,
 	}, nil
 }
 
