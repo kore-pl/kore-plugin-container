@@ -56,6 +56,15 @@ func TestCheckProtected(t *testing.T) {
 			t.Fatalf("保护名单 %q 误伤: %v", token, perr)
 		}
 	}
+
+	// 反向场景：名单给完整 ID，运行期只拿到 12 位短 ID（docker ps），同样要命中。
+	shortRef := ContainerRef{ID: full[:12], Name: "another-name"}
+	if perr := CheckProtected(shortRef, []string{full}); perr == nil || perr.Code != pluginapi.E_UNAUTHORIZED {
+		t.Fatalf("完整 ID 名单未命中 12 位短 ID: %v", perr)
+	}
+	if perr := CheckProtected(shortRef, []string{"999999999999"}); perr != nil {
+		t.Fatalf("无关短 ID 误伤: %v", perr)
+	}
 }
 
 // TestDetectSelfContainerIDs 容器内 HOSTNAME 为 12 位 hex 时纳入保护。

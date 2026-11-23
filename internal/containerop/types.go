@@ -21,7 +21,7 @@ const (
 	// DefaultDockerTimeout 是单条 docker 命令的超时：inspect 在容器多/挂载多时可能偏慢。
 	DefaultDockerTimeout = 20 * time.Second
 	// DefaultLogTail / MaxLogTail 是 container.logs 的缺省与硬上限行数。
-	DefaultLogTail = 100
+	DefaultLogTail = 200
 	MaxLogTail     = 2000
 	// MaxLogLineBytes 是单行日志的硬上限（含被截断的行）。
 	MaxLogLineBytes = 8 << 10
@@ -81,6 +81,8 @@ type ContainerEntry struct {
 	Ports      string `json:"ports"`
 	Created    string `json:"created"`
 	RunningFor string `json:"running_for"`
+	// Protected 标记该容器命中保护名单：前端据此展示锁标并禁用启停按钮。
+	Protected bool `json:"protected"`
 }
 
 // ListResult 是 container.list 的结构。
@@ -204,8 +206,8 @@ type Executor interface {
 	List(all bool) ([]ContainerEntry, error)
 	// Inspect 读取单个容器的精简详情。
 	Inspect(id string) (*InspectResult, error)
-	// Logs 读取最近 tail 行日志（stdout+stderr 合并）。
-	Logs(id string, tail int) (LogsResult, error)
+	// Logs 读取最近 tail 行日志（stdout+stderr 合并）；since 非空时只取该时间之后的日志。
+	Logs(id string, tail int, since string) (LogsResult, error)
 	// Start 启动容器。
 	Start(id string) error
 	// Stop 停止容器；timeout<0 表示使用 docker 缺省优雅退出时间。
@@ -251,10 +253,11 @@ type inspectParams struct {
 	ID string `json:"id"`
 }
 
-// logsParams 是 container.logs 入参；tail 缺省 100。
+// logsParams 是 container.logs 入参；tail 缺省 100，since 可选（docker --since 原样传参）。
 type logsParams struct {
-	ID   string `json:"id"`
-	Tail *int   `json:"tail"`
+	ID    string `json:"id"`
+	Tail  *int   `json:"tail"`
+	Since string `json:"since"`
 }
 
 // actionParams 是 start/stop/restart 的共用入参。

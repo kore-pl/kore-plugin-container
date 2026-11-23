@@ -29,7 +29,7 @@ func (e *testExecutor) Inspect(id string) (*InspectResult, error) {
 	return e.inspect, e.err
 }
 
-func (e *testExecutor) Logs(id string, tail int) (LogsResult, error) {
+func (e *testExecutor) Logs(id string, tail int, since string) (LogsResult, error) {
 	e.calls = append(e.calls, "logs")
 	return e.logs, e.err
 }
@@ -200,6 +200,31 @@ func TestProtectedRejectsWrites(t *testing.T) {
 	}
 }
 
+// TestProtectedListFlag 保护名单命中时 container.list 给出 protected 标记；
+// stop 命中名单的 common-mysql 被拒（E_UNAUTHORIZED）。
+func TestProtectedListFlag(t *testing.T) {
+	exec := healthyExecutor()
+	exec.list = []ContainerEntry{{ID: "bbbbbbbbbbbb", Name: "common-mysql", Image: "mysql:8", State: "running"}}
+	raw, perr := callWith(t, exec, "container.list", `{}`, Options{Protected: []string{"common-mysql"}})
+	if perr != nil {
+		t.Fatalf("list 错误: %v", perr)
+	}
+	var result ListResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("解析 list 结果: %v", err)
+	}
+	if !result.Containers[0].Protected {
+		t.Fatalf("common-mysql 应带 protected=true")
+	}
+	stopExec := healthyExecutor()
+	stopExec.ref = ContainerRef{ID: strings.Repeat("b", 64), Name: "common-mysql"}
+	_, perr = callWith(t, stopExec, "container.stop",
+		`{"id":"common-mysql","confirm":true}`, Options{Protected: []string{"common-mysql"}})
+	if perr == nil || perr.Code != pluginapi.E_UNAUTHORIZED {
+		t.Fatalf("stop common-mysql 错误=%v，期望 E_UNAUTHORIZED", perr)
+	}
+}
+
 // TestProtectedAllowsReads 保护名单只拦写操作，读操作照常。
 func TestProtectedAllowsReads(t *testing.T) {
 	opts := Options{Protected: []string{"web"}}
@@ -234,7 +259,7 @@ func TestDockerMissing(t *testing.T) {
 	}
 }
 
-// TestLogsTailBounds tail 缺省 100，越界 E_INVALID。
+// TestLogsTailBounds tail 缺省 200，越界 E_INVALID；since 形状非法 E_INVALID。
 func TestLogsTailBounds(t *testing.T) {
 	for _, params := range []string{`{"id":"web","tail":0}`, `{"id":"web","tail":2001}`, `{"id":"web","tail":-1}`} {
 		if _, perr := callWith(t, healthyExecutor(), "container.logs", params, Options{}); perr == nil || perr.Code != pluginapi.E_INVALID {
@@ -243,6 +268,14 @@ func TestLogsTailBounds(t *testing.T) {
 	}
 	if _, perr := callWith(t, healthyExecutor(), "container.logs", `{"id":"web","tail":100}`, Options{}); perr != nil {
 		t.Fatalf("合法 tail 错误: %v", perr)
+	}
+	if _, perr := callWith(t, healthyExecutor(), "container.logs", `{"id":"web","since":"10m"}`, Options{}); perr != nil {
+		t.Fatalf("合法 since 错误: %v", perr)
+	}
+	for _, bad := range []string{`{"id":"web","since":"1 2"}`, `{"id":"web","since":"a;b"}`, `{"id":"web","since":"-x"}`} {
+		if _, perr := callWith(t, healthyExecutor(), "container.logs", bad, Options{}); perr == nil || perr.Code != pluginapi.E_INVALID {
+			t.Fatalf("since 参数 %s 错误=%v，期望 E_INVALID", bad, perr)
+		}
 	}
 }
 

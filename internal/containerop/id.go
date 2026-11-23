@@ -31,6 +31,19 @@ func ValidateID(raw string) *pluginapi.Error {
 	return nil
 }
 
+// sinceRE 是 container.logs 的 since 形状：docker --since 接受 Go 时长（10m）、
+// Unix 秒（1730000000）或 RFC3339（2026-11-23T08:00:00+08:00）——共用的合法字符集
+// 为字母数字与 . + : T - ；限制形状只防明显误传，注入面由固定 argv 本身封死。
+var sinceRE = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+:T-]{0,63}$`)
+
+// ValidateSince 校验 since 参数形状；空串表示未指定，直接放行。
+func ValidateSince(raw string) *pluginapi.Error {
+	if raw == "" || sinceRE.MatchString(raw) {
+		return nil
+	}
+	return invalid("since 非法：支持 Go 时长（如 10m）、Unix 秒或 RFC3339 时间戳")
+}
+
 // CheckProtected 判断容器是否命中保护名单。
 // 名单项可以是名称、完整 64 位 ID，或 ≥6 位的十六进制短 ID；命中返回 E_UNAUTHORIZED。
 func CheckProtected(ref ContainerRef, protected []string) *pluginapi.Error {
@@ -42,8 +55,12 @@ func CheckProtected(ref ContainerRef, protected []string) *pluginapi.Error {
 		if token == ref.Name || token == ref.ID {
 			return protectedError(ref)
 		}
-		// 短 ID：只对 ≥6 位十六进制做前缀匹配，既覆盖 docker 短 ID，又避免单字符名单误伤全部容器。
-		if len(token) >= 6 && isHex(token) && strings.HasPrefix(ref.ID, strings.ToLower(token)) {
+		// 短 ID：只对 ≥6 位十六进制做双向前缀匹配——既覆盖「名单给短 ID、命中完整 ID」，
+		// 也覆盖「名单给完整 ID、list 只拿到 12 位短 ID」的保护标记场景，
+		// 同时避免单字符名单误伤全部容器。
+		if len(token) >= 6 && isHex(token) && isHex(ref.ID) &&
+			(strings.HasPrefix(ref.ID, strings.ToLower(token)) ||
+				len(ref.ID) >= 6 && strings.HasPrefix(strings.ToLower(token), ref.ID)) {
 			return protectedError(ref)
 		}
 	}

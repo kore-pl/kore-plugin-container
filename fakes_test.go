@@ -47,7 +47,7 @@ func (f *fakeExecutor) Inspect(id string) (*containerop.InspectResult, error) {
 	return f.inspect, nil
 }
 
-func (f *fakeExecutor) Logs(id string, tail int) (containerop.LogsResult, error) {
+func (f *fakeExecutor) Logs(id string, tail int, since string) (containerop.LogsResult, error) {
 	f.calls = append(f.calls, "logs")
 	if f.err != nil {
 		return containerop.LogsResult{}, f.err

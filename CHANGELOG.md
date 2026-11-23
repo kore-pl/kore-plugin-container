@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 (2026-11-23)
+
+- feat: `container.logs` 新增可选 `since`（原样作为 `docker logs --since` 的 argv 元素，
+  支持 Go 时长 / Unix 秒 / RFC3339，形状校验拒绝空白等明显误传），`tail` 缺省 100 → 200
+- feat: `container.list` 每条新增 `protected` 布尔：命中保护名单的容器由前端展示锁标并禁用启停
+- feat: 保护名单短 ID 改为 ≥6 位十六进制**双向**前缀匹配——名单给完整 ID、`docker ps` 只
+  拿到 12 位短 ID 时同样命中
+- test: `TestProtectedListFlag`（stop common-mysql 被 E_UNAUTHORIZED 拒绝 + list 标记）、
+  `since` 形状校验、反向短 ID 前缀命中
+
+
 ## 0.2.0 (2026-11-23)
 
 - feat: 真实容器列表/详情/日志/启停/统计（去 noop）

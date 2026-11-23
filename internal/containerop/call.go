@@ -87,6 +87,11 @@ func (r *Runtime) callList(raw json.RawMessage) (json.RawMessage, *pluginapi.Err
 	if err != nil {
 		return nil, classify(err)
 	}
+	// protected 是读操作可以直接给的前端提示：命中保护名单的行在前端锁标 + 禁用启停。
+	for i := range containers {
+		containers[i].Protected = CheckProtected(
+			ContainerRef{ID: containers[i].ID, Name: containers[i].Name}, r.opts.Protected) != nil
+	}
 	if containers == nil {
 		containers = []ContainerEntry{}
 	}
@@ -128,7 +133,13 @@ func (r *Runtime) callLogs(raw json.RawMessage) (json.RawMessage, *pluginapi.Err
 	if tail < 1 || tail > MaxLogTail {
 		return nil, invalid(fmt.Sprintf("tail 必须在 1..%d 之间", MaxLogTail))
 	}
-	result, err := r.exec.Logs(p.ID, tail)
+	// since 原样作为 docker logs --since 的一个 argv 元素（固定 argv 不经 shell，无注入面），
+	// 但仍限制形状，拒绝空白/控制字符等显然的误传。
+	since := p.Since
+	if sincePerr := ValidateSince(since); sincePerr != nil {
+		return nil, sincePerr
+	}
+	result, err := r.exec.Logs(p.ID, tail, since)
 	if err != nil {
 		return nil, classify(err)
 	}

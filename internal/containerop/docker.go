@@ -78,11 +78,16 @@ func (c *Client) Resolve(id string) (ContainerRef, error) {
 	return ContainerRef{ID: fields[0], Name: strings.TrimPrefix(fields[1], "/")}, nil
 }
 
-// Logs 执行 docker logs --tail N，合并 stdout/stderr 并按单行/总字节预算截断。
-func (c *Client) Logs(id string, tail int) (LogsResult, error) {
+// Logs 执行 docker logs --tail N（since 非空时追加 --since），合并 stdout/stderr 并按单行/总字节预算截断。
+func (c *Client) Logs(id string, tail int, since string) (LogsResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	cmd, err := c.command(ctx, "logs", "--tail", strconv.Itoa(tail), id)
+	args := []string{"logs", "--tail", strconv.Itoa(tail)}
+	if since != "" {
+		args = append(args, "--since", since)
+	}
+	args = append(args, id)
+	cmd, err := c.command(ctx, args...)
 	if err != nil {
 		return LogsResult{}, err
 	}
