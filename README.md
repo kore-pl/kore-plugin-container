@@ -10,10 +10,12 @@ kore 的容器管理插件：**通过宿主机已安装的 `docker` CLI 真实�
 
 ## 协议面
 
-- `kore.plugin.v1`，`lifecycle=lazy`，`depth_level=basic`
-- 能力声明：`system:read` + `system:admin`（启停/重启属于写操作）
-- 方法：`container.list` / `container.inspect` / `container.logs` /
-  `container.start` / `container.stop` / `container.restart` / `container.stats`
+- `kore.plugin.v1`，`lifecycle=lazy`，`depth_level=production`
+- 能力声明：`system:read` + `system:admin`（启停/重启/镜像写/资源调整属于写操作）
+- 方法（12 个业务方法）：`container.list` / `container.inspect` / `container.logs` /
+  `container.stats` / `container.health` / `container.images` / `container.pull` /
+  `container.rmi` / `container.update` / `container.start` / `container.stop` / `container.restart`
+- `container.exec` / `shell` / `attach` **明确不提供**：命中即在触达 docker 前返回 `E_UNSUPPORTED`（低权插件进程执行容器内命令等同绕过权限模型，ADR-0018）
 - 方法名必须带 `container.` 域前缀（协议 §7.2），裸 `list` 不再接受
 - 握手的 stdout 留给协议帧，日志一律写 stderr
 
@@ -28,6 +30,13 @@ kore 的容器管理插件：**通过宿主机已安装的 `docker` CLI 真实�
 | `container.stop` | `{id,confirm:true,timeout?}` | `{id,action:"stop",ok,state}` |
 | `container.restart` | `{id,confirm:true,timeout?}` | `{id,action:"restart",ok,state}` |
 | `container.stats` | `{id}` | `{id,name,cpu_percent,memory{},network{},block{},pids}` |
+| `container.health` | `{id}` | `{id,status,health,running,restart_count,started_at}`（inspect 的 state/health 投影） |
+| `container.images` | `{}` | `{images:[{id,repository,tag,size,created,dangling}],count}` |
+| `container.pull` | `{ref,confirm:true}` | `{ref,ok,message,truncated}`（镜像引用过白名单） |
+| `container.rmi` | `{ref,confirm:true,force?}` | `{ref,ok,force}`（必须显式确认） |
+| `container.update` | `{id,memory_bytes?,cpus?,confirm:true}` | `{id,ok,memory_bytes?,cpus?}`；内存与 CPU 至少给一个 |
+
+写方法（`start` / `stop` / `restart` / `pull` / `rmi` / `update`）里，除 `start` 外都要求 `confirm=true`；镜像引用与容器 ID 走同一套正则白名单，非法形状在触达 docker 前返回 `E_INVALID`。
 
 ### container.list
 
@@ -134,7 +143,7 @@ go test -timeout 200s ./...
   Go 平台 E_UNSUPPORTED、docker 缺失、`docker ps --format json` fixture 解析、
   `docker inspect` fixture（端口/网络/挂载/资源/health）、env 脱敏、logs 单行 8 KiB
   截断、stats 人类可读值换算、tail/timeout 边界。
-- `tests/fault/`：四类故障注入（kill / timeout / disk / cgroup）覆盖全部七个方法，
+- `tests/fault/`：四类故障注入（kill / timeout / disk / cgroup）覆盖全部 12 个业务方法，
   断言 `E_UPSTREAM` / `E_INTERNAL` / `E_UNSUPPORTED` 与无故障 sanity。
 - `tests/e2e/`：真实 docker 全流程，默认跳过：
 
@@ -153,7 +162,7 @@ KORE_CONTAINER_E2E=1 go test -timeout 180s -v ./tests/e2e
 
 ```bash
 make build && make dist
-tar -tzf dist/container-0.1.0.tar.gz
+tar -tzf dist/container-0.5.4.tar.gz
 ```
 
 静态构建基线：`CGO_ENABLED=0 GOWORK=off GOAMD64=v1 -trimpath -buildvcs=false
@@ -180,7 +189,7 @@ MIT License — pengtang1024
 - **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 - **兼容性**：`protocol: kore.plugin.v1` · `requires_kore: >=0.1.0 <0.2.0` · `lifecycle: lazy` · 深度等级 `production`。
 - **验证方式**：本地 `make check` 优先（CI 只在 push main / tag / PR / 手动跑；发布前 `make dist` 连跑两次核对 sha 一致）。
-- **发布产物**：`make dist` → `dist/container-0.4.1.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
+- **发布产物**：`make dist` → `dist/container-0.5.4.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
 - **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
 
 <!-- oss:end -->
