@@ -26,7 +26,7 @@ func (f faultExecutor) Inspect(string) (*containerop.InspectResult, error) {
 	return nil, containerop.NewFaultError(f.kind, "inspect 执行面故障")
 }
 
-func (f faultExecutor) Logs(string, int) (containerop.LogsResult, error) {
+func (f faultExecutor) Logs(string, int, string) (containerop.LogsResult, error) {
 	return containerop.LogsResult{}, containerop.NewFaultError(f.kind, "logs 执行面故障")
 }
 
@@ -99,7 +99,7 @@ func (healthyExecutor) Inspect(string) (*containerop.InspectResult, error) {
 	return &containerop.InspectResult{ID: strings.Repeat("a", 64), Name: "web", State: containerop.InspectState{Status: "running"}}, nil
 }
 
-func (healthyExecutor) Logs(string, int) (containerop.LogsResult, error) {
+func (healthyExecutor) Logs(string, int, string) (containerop.LogsResult, error) {
 	return containerop.LogsResult{ID: "web", Lines: []string{"ok"}}, nil
 }
 
