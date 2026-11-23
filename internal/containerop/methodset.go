@@ -7,7 +7,8 @@ import "sort"
 //   - 读方法只要求 system:read，写方法要求 system:admin（内核按方法取用，见 kore
 //     registry/validate.go 与 httpapi/invoke_capability.go）。
 //
-// 注意：这里只收录真正实现的方法；exec / shell / attach 属明确不做（见 DeniedMethods）。
+// 注意：这里只收录真正实现的方法；shell / attach 属明确不做（见 deniedMethods）。
+// exec 0.5.0 起提供**一次性命令**（固定 argv、拒绝清单、非 root 默认），交互式仍不做。
 var methodCapabilities = map[string]string{
 	"list":    "system:read",
 	"inspect": "system:read",
@@ -15,6 +16,7 @@ var methodCapabilities = map[string]string{
 	"stats":   "system:read",
 	"images":  "system:read",
 	"health":  "system:read",
+	"exec":    "system:admin",
 	"start":   "system:admin",
 	"stop":    "system:admin",
 	"restart": "system:admin",
@@ -23,10 +25,11 @@ var methodCapabilities = map[string]string{
 	"update":  "system:admin",
 }
 
-// deniedMethods 是明确不提供的容器内命令执行入口。
-// 理由（ADR-0018 / G-11）：插件进程必须保持低权；exec 等于把容器当宿主 shell 用，
-// 绕过插件权限模型与内核提权代理；容器编排本身也在 G-11 的不做清单内。
-var deniedMethods = []string{"attach", "exec", "shell"}
+// deniedMethods 是明确不提供的入口。
+// 理由：attach / shell 是**交互式**通道——插件没有 PTY 转发，做了就是半成品，
+// 交互式终端归 terminal 插件；容器编排属 G-11 不做项。exec（一次性命令）0.5.0 起
+// 由拒绝清单 + 非 root 默认 + root 需 confirm 三道闸门收口（ADR-0018 低权模型不变）。
+var deniedMethods = []string{"attach", "shell"}
 
 // MethodCapabilities 返回方法名 → 内核特权能力的副本（调用方不可改内部表）。
 func MethodCapabilities() map[string]string {

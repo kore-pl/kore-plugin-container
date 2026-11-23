@@ -16,6 +16,7 @@ type testExecutor struct {
 	stats   StatsResult
 	images  []ImageEntry
 	updated *ContainerUpdate
+	execReq *ExecRequest
 	removed []string
 	pulled  []string
 	ref     ContainerRef
@@ -84,6 +85,15 @@ func (e *testExecutor) Update(id string, update ContainerUpdate) error {
 	return e.err
 }
 
+func (e *testExecutor) Exec(req ExecRequest) (ExecResult, error) {
+	e.calls = append(e.calls, "exec")
+	e.execReq = &req
+	if e.err != nil {
+		return ExecResult{}, e.err
+	}
+	return ExecResult{ExitCode: 0, Stdout: "ok"}, nil
+}
+
 func (e *testExecutor) Resolve(id string) (ContainerRef, error) {
 	e.calls = append(e.calls, "resolve")
 	if e.err != nil {
@@ -119,16 +129,16 @@ func callWith(t *testing.T, exec Executor, method, params string, opts Options) 
 }
 
 // TestBusinessVerb 只接受 container.<verb>，裸动词与其它域一律拒绝；
-// exec / shell / attach 属于「已识别但明确拒绝」的方法（由 Call 返回 E_UNSUPPORTED）。
+// shell / attach 属于「已识别但明确拒绝」的方法（由 Call 返回 E_UNSUPPORTED）；exec 已改为受控支持。
 func TestBusinessVerb(t *testing.T) {
-	for _, method := range []string{"container.list", "container.inspect", "container.logs",
+	for _, method := range []string{"container.list", "container.exec", "container.inspect", "container.logs",
 		"container.start", "container.stop", "container.restart", "container.stats",
 		"container.images", "container.health", "container.pull", "container.rmi", "container.update"} {
 		if _, ok := businessVerb(method); !ok {
 			t.Fatalf("%s 未被接受", method)
 		}
 	}
-	for _, method := range []string{"container.exec", "container.shell", "container.attach"} {
+	for _, method := range []string{"container.shell", "container.attach"} {
 		verb, ok := businessVerb(method)
 		if !ok || !isDeniedVerb(verb) {
 			t.Fatalf("%s 应识别为拒绝方法", method)
@@ -375,9 +385,9 @@ func containsCall(calls []string, want string) bool {
 	return false
 }
 
-// TestDeniedMethods exec / shell / attach 在触达执行面之前返回 E_UNSUPPORTED。
+// TestDeniedMethods shell / attach 在触达执行面之前返回 E_UNSUPPORTED（exec 已改为受控支持）。
 func TestDeniedMethods(t *testing.T) {
-	for _, method := range []string{"container.exec", "container.shell", "container.attach"} {
+	for _, method := range []string{"container.shell", "container.attach"} {
 		exec := healthyExecutor()
 		result, perr := callWith(t, exec, method, `{}`, Options{})
 		if perr == nil || perr.Code != pluginapi.E_UNSUPPORTED {

@@ -105,6 +105,10 @@ func (f *fakeExecutor) Update(id string, update containerop.ContainerUpdate) err
 	return f.err
 }
 
+func (f *fakeExecutor) Exec(req containerop.ExecRequest) (containerop.ExecResult, error) {
+	return containerop.ExecResult{ExitCode: 0}, nil
+}
+
 func (f *fakeExecutor) Resolve(id string) (containerop.ContainerRef, error) {
 	f.calls = append(f.calls, "resolve")
 	if f.err != nil {

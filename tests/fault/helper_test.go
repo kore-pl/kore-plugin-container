@@ -34,6 +34,10 @@ func (f faultExecutor) Start(string) error {
 	return containerop.NewFaultError(f.kind, "start 执行面故障")
 }
 
+func (f faultExecutor) Exec(containerop.ExecRequest) (containerop.ExecResult, error) {
+	return containerop.ExecResult{}, containerop.NewFaultError(f.kind, "exec 执行面故障")
+}
+
 func (f faultExecutor) Stop(string, int) error {
 	return containerop.NewFaultError(f.kind, "stop 执行面故障")
 }
@@ -145,6 +149,10 @@ func (healthyExecutor) Pull(string) (containerop.PullResult, error) {
 func (healthyExecutor) RemoveImage(string, bool) error { return nil }
 
 func (healthyExecutor) Update(string, containerop.ContainerUpdate) error { return nil }
+
+func (healthyExecutor) Exec(containerop.ExecRequest) (containerop.ExecResult, error) {
+	return containerop.ExecResult{ExitCode: 0, Stdout: "ok"}, nil
+}
 
 func (healthyExecutor) Resolve(string) (containerop.ContainerRef, error) {
 	return containerop.ContainerRef{ID: strings.Repeat("a", 64), Name: "web"}, nil

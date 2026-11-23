@@ -52,6 +52,8 @@ func (r *Runtime) Call(method string, params json.RawMessage) (json.RawMessage, 
 	switch verb {
 	case "list":
 		return r.callList(params)
+	case "exec":
+		return r.callExec(params)
 	case "inspect":
 		return r.callInspect(params)
 	case "logs":

@@ -68,7 +68,7 @@ func TestMethodCapabilitiesMatchCode(t *testing.T) {
 func TestMethodCapabilitiesClassification(t *testing.T) {
 	manifest := readCapabilityManifest(t)
 	read := []string{"list", "inspect", "logs", "stats", "images", "health"}
-	write := []string{"start", "stop", "restart", "pull", "rmi", "update"}
+	write := []string{"exec", "start", "stop", "restart", "pull", "rmi", "update"}
 
 	for _, verb := range read {
 		if got := manifest.MethodCapabilities["container."+verb]; got != "system:read" {
@@ -117,17 +117,17 @@ func TestDeniedMethodsNotDeclared(t *testing.T) {
 	}
 }
 
-// TestSupportedMethodsInventory 方法清单可复现：12 个业务方法 + 3 个拒绝方法。
+// TestSupportedMethodsInventory 方法清单可复现：13 个业务方法 + 2 个拒绝方法。
 func TestSupportedMethodsInventory(t *testing.T) {
 	supported := containerop.SupportedMethods()
-	if len(supported) != 12 {
-		t.Fatalf("SupportedMethods 数量=%d，期望 12：%v", len(supported), supported)
+	if len(supported) != 13 {
+		t.Fatalf("SupportedMethods 数量=%d，期望 13：%v", len(supported), supported)
 	}
 	if !sort.SliceIsSorted(supported, func(i, j int) bool { return supported[i] < supported[j] }) {
 		t.Fatalf("SupportedMethods 未按字典序返回：%v", supported)
 	}
 	denied := containerop.DeniedMethods()
-	wantDenied := []string{"attach", "exec", "shell"}
+	wantDenied := []string{"attach", "shell"}
 	if strings.Join(denied, ",") != strings.Join(wantDenied, ",") {
 		t.Fatalf("DeniedMethods=%v，期望 %v", denied, wantDenied)
 	}

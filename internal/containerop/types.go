@@ -292,6 +292,8 @@ type Executor interface {
 	RemoveImage(ref string, force bool) error
 	// Update 修改容器的内存 / CPU 限额。
 	Update(id string, update ContainerUpdate) error
+	// Exec 在容器内执行一次性命令（固定 argv，不经过 shell；超时 kill 并回传已捕获输出）。
+	Exec(req ExecRequest) (ExecResult, error)
 	// Resolve 解析容器的完整 ID 与名称，用于保护名单校验。
 	Resolve(id string) (ContainerRef, error)
 }

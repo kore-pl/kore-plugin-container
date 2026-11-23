@@ -6,13 +6,22 @@
   "lifecycle": "lazy",
   "depth_level": "production",
   "entry": "bin/container",
-  "capabilities": ["system:read", "system:admin"],
+  "capabilities": [
+    "system:read",
+    "system:admin"
+  ],
   "triggers": [],
   "requires_kore": ">=0.1.0 <0.2.0",
-  "resources": {"memory_mb": 6, "cpu_quota": "15%", "pids_max": 16},
+  "resources": {
+    "memory_mb": 6,
+    "cpu_quota": "15%",
+    "pids_max": 16
+  },
   "depends_on": [],
   "conflicts": [],
-  "scenario_tags": ["ops"],
+  "scenario_tags": [
+    "ops"
+  ],
   "size_bytes": 1522078,
   "method_capabilities": {
     "container.list": "system:read",
@@ -26,6 +35,7 @@
     "container.restart": "system:admin",
     "container.pull": "system:admin",
     "container.rmi": "system:admin",
-    "container.update": "system:admin"
+    "container.update": "system:admin",
+    "container.exec": "system:admin"
   }
 }
