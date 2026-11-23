@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.5 (2026-11-24)
+
+- chore(depth_level): `production` → `basic`，依据 `PLUGIN-CATALOG.md` §6.1 升级判据——升 `production` 要求
+  ①边界用例覆盖（异常输入 / 并发 / 权限不足 / 资源耗尽各 ≥1 例并进 CI）与 ②故障注入通过**两条都满足**；
+  本仓 `tests/fault/` 四类故障注入真实 PASS（②达成），但 `tests/boundary/` 不存在、并发用例
+  （`t.Parallel`）0 命中，①无证据 → 原 `production` 属单维度达标的**过度声明**，索引的 `basic` 才是正确值
+- chore: **不是降级缺陷**——零代码变更，执行面 / 拒绝清单 / 故障矩阵均未改；边界用例与高级配置延到 v1.1
+- chore(release): 版本 bump 0.5.4 → 0.5.5（`info.json` 在 dist 包体内，改元数据必须 bump，RELEASE §1）
+
 ## 0.5.4 (2026-11-23)
 
 - **行为变更**：`docker.sock` 无权访问时由 `E_UNSUPPORTED` 改为 **`E_NEED_ROOT`**（`detail.reason=need_root`），对齐 ADR-0018 降级矩阵（container × docker.sock）；message 提示「由管理员通过内核提权通道（`root_actions`）授权后重试」，仍不引导加入 docker 组（等价 root、绕过审计）
