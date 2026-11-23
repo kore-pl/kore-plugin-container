@@ -162,7 +162,7 @@ KORE_CONTAINER_E2E=1 go test -timeout 180s -v ./tests/e2e
 
 ```bash
 make build && make dist
-tar -tzf dist/container-0.5.4.tar.gz
+tar -tzf dist/container-0.5.5.tar.gz
 ```
 
 静态构建基线：`CGO_ENABLED=0 GOWORK=off GOAMD64=v1 -trimpath -buildvcs=false
@@ -189,7 +189,7 @@ MIT License — pengtang1024
 - **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 - **兼容性**：`protocol: kore.plugin.v1` · `requires_kore: >=0.1.0 <0.2.0` · `lifecycle: lazy` · 深度等级 `basic`。
 - **验证方式**：本地 `make check` 优先（CI 只在 push main / tag / PR / 手动跑；发布前 `make dist` 连跑两次核对 sha 一致）。
-- **发布产物**：`make dist` → `dist/container-0.5.4.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
+- **发布产物**：`make dist` → `dist/container-0.5.5.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
 - **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
 
 <!-- oss:end -->
