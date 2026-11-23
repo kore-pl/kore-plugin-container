@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 (2026-11-23)
+
+- fix: 修正 docker 权限引导——不再建议加入 docker 组（与 ADR-0018 冲突）；socket 权限错误改为「请通过内核提权通道授权，或由管理员按最小权限原则自行配置」，代码注释写明 docker 组等价 root、会绕过提权审计
+
 ## 0.5.2 (2026-11-23)
 
 - fix: `container.exec` 错误码语义修正——拒绝清单/逃逸参数 → `E_UNSUPPORTED`、root 未确认 → `E_INVALID`、docker 不可用 → `E_UNSUPPORTED`；三类统一带显式 `detail.reason`（`denylist` / `escape_flag` / `confirm_required` / `docker_missing`），前端不再靠 message 字符串判别

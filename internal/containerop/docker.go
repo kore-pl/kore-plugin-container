@@ -279,8 +279,11 @@ func (c *Client) execError(err error, stderr string) error {
 			"Docker daemon 不可达：请确认 dockerd 已启动，且当前用户可访问 docker socket（%s）", truncateRunes(text, 300))
 	case strings.Contains(lower, "permission denied") &&
 		(strings.Contains(lower, "docker.sock") || strings.Contains(lower, "unix:///var/run/docker")):
+		// 刻意不提供「把用户 / 插件加入 docker 组」这类引导：docker 组成员可挂载宿主
+		// 文件系统，等价 root，引导加组等于绕过 ADR-0018 的内核提权通道与审计。
+		// 这里只说清「需要什么访问权」，授权方式交给内核通道或管理员按最小权限决定。
 		return opErrorf(pluginapi.E_UNSUPPORTED,
-			"无权访问 Docker socket：请将用户加入 docker 组，或配置 DOCKER_HOST（%s）", truncateRunes(text, 300))
+			"无权访问 Docker socket：容器操作需要访问 Docker socket；请通过内核提权通道授权，或由管理员按最小权限原则自行配置（%s）", truncateRunes(text, 300))
 	case strings.Contains(lower, "no such container"), strings.Contains(lower, "no such object"),
 		strings.Contains(lower, "no such image"), strings.Contains(lower, "manifest unknown"):
 		return opErrorf(pluginapi.E_NOTFOUND, "容器或镜像不存在（%s）", truncateRunes(text, 300))
