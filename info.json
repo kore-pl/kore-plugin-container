@@ -13,7 +13,7 @@
   "depends_on": [],
   "conflicts": [],
   "scenario_tags": ["ops"],
-  "size_bytes": 1499833,
+  "size_bytes": 1522078,
   "method_capabilities": {
     "container.list": "system:read",
     "container.inspect": "system:read",
