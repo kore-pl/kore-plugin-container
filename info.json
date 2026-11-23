@@ -1,7 +1,7 @@
 {
   "id": "container",
   "name": "容器管理插件",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "protocol": "kore.plugin.v1",
   "lifecycle": "lazy",
   "depth_level": "production",

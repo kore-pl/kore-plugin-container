@@ -272,18 +272,22 @@ func (c *Client) execError(err error, stderr string) error {
 	text := sanitizeStderr(stderr)
 	lower := strings.ToLower(text)
 	switch {
-	case strings.Contains(lower, "cannot connect to the docker daemon"),
-		strings.Contains(lower, "is the docker daemon running"),
-		strings.Contains(lower, "docker daemon is not running"):
-		return opErrorf(pluginapi.E_UNSUPPORTED,
-			"Docker daemon 不可达：请确认 dockerd 已启动，且当前用户可访问 docker socket（%s）", truncateRunes(text, 300))
+	// 权限分支必须排在 daemon 不可达之前：docker CLI 无权访问 socket 时的典型输出同时含
+	// "permission denied" 与 socket 路径（"permission denied while trying to connect to the
+	// Docker daemon socket"），若先匹配 daemon 分支会被误判成「daemon 没启动」。
+	// ADR-0018 降级矩阵（container × docker.sock）要求该情形返回 E_NEED_ROOT，而非 E_UNSUPPORTED。
 	case strings.Contains(lower, "permission denied") &&
 		(strings.Contains(lower, "docker.sock") || strings.Contains(lower, "unix:///var/run/docker")):
 		// 刻意不提供「把用户 / 插件加入 docker 组」这类引导：docker 组成员可挂载宿主
 		// 文件系统，等价 root，引导加组等于绕过 ADR-0018 的内核提权通道与审计。
 		// 这里只说清「需要什么访问权」，授权方式交给内核通道或管理员按最小权限决定。
+		return opErrorf(pluginapi.E_NEED_ROOT,
+			"无权访问 Docker socket：容器操作需要宿主 root 权限访问 Docker socket；请由管理员通过内核提权通道（root_actions）授权后重试，或按最小权限原则自行配置（%s）", truncateRunes(text, 300))
+	case strings.Contains(lower, "cannot connect to the docker daemon"),
+		strings.Contains(lower, "is the docker daemon running"),
+		strings.Contains(lower, "docker daemon is not running"):
 		return opErrorf(pluginapi.E_UNSUPPORTED,
-			"无权访问 Docker socket：容器操作需要访问 Docker socket；请通过内核提权通道授权，或由管理员按最小权限原则自行配置（%s）", truncateRunes(text, 300))
+			"Docker daemon 不可达：请确认 dockerd 已启动，且当前用户可访问 docker socket（%s）", truncateRunes(text, 300))
 	case strings.Contains(lower, "no such container"), strings.Contains(lower, "no such object"),
 		strings.Contains(lower, "no such image"), strings.Contains(lower, "manifest unknown"):
 		return opErrorf(pluginapi.E_NOTFOUND, "容器或镜像不存在（%s）", truncateRunes(text, 300))

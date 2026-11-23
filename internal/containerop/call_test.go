@@ -2,6 +2,7 @@ package containerop
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -605,3 +606,36 @@ func TestCallHealthMissing(t *testing.T) {
 		t.Fatalf("缺失容器 health 错误=%v，期望 E_NOTFOUND", perr)
 	}
 }
+
+// TestExecErrorSocketPermissionDeniedMapping 断言 ADR-0018 降级矩阵（container × docker.sock）：
+// 无权访问 docker.sock 必须返回 E_NEED_ROOT，且不能被「daemon 不可达」分支吞掉。
+func TestExecErrorSocketPermissionDeniedMapping(t *testing.T) {
+	c := &Client{}
+	stderr := `permission denied while trying to connect to the Docker daemon socket at ` +
+		`unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.24/containers/json": ` +
+		`dial unix /var/run/docker.sock: connect: permission denied`
+	err := c.execError(exitStatusStub{}, stderr)
+	var perr *OpError
+	if !errors.As(err, &perr) {
+		t.Fatalf("期望 *OpError，实际 %v", err)
+	}
+	if perr.Code != pluginapi.E_NEED_ROOT {
+		t.Fatalf("sock 无权错误码=%q，期望 %q（不得为 E_UNSUPPORTED）", perr.Code, pluginapi.E_NEED_ROOT)
+	}
+}
+
+// TestExecErrorDaemonDownKeepsUnsupported 守护另一半：daemon 真没启动仍为 E_UNSUPPORTED，
+// 不因上一个用例把权限分支前移而被误并。
+func TestExecErrorDaemonDownKeepsUnsupported(t *testing.T) {
+	c := &Client{}
+	err := c.execError(exitStatusStub{}, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+	var perr *OpError
+	if !errors.As(err, &perr) || perr.Code != pluginapi.E_UNSUPPORTED {
+		t.Fatalf("daemon 不可达错误=%v，期望 E_UNSUPPORTED", err)
+	}
+}
+
+// exitStatusStub 是 cmd.Run 失败的最小替身（execError 只做类型断言与 stderr 文本判别）。
+type exitStatusStub struct{}
+
+func (exitStatusStub) Error() string { return "exit status 1" }

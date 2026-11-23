@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.4 (2026-11-23)
+
+- **行为变更**：`docker.sock` 无权访问时由 `E_UNSUPPORTED` 改为 **`E_NEED_ROOT`**（`detail.reason=need_root`），对齐 ADR-0018 降级矩阵（container × docker.sock）；message 提示「由管理员通过内核提权通道（`root_actions`）授权后重试」，仍不引导加入 docker 组（等价 root、绕过审计）
+- fix: 权限分支前移到「daemon 不可达」之前——docker 无权访问 socket 的输出同时含 `permission denied` 与 socket 路径，原先会被 daemon 分支吞掉并误报成「daemon 没启动」
+- 保持不变：非 Linux / 无 docker CLI / daemon 不可达仍 `E_UNSUPPORTED`；拒绝清单与逃逸参数仍 `E_UNSUPPORTED`；保护名单仍 `E_UNAUTHORIZED`
+- 前端影响：可据 `code=E_NEED_ROOT` 区分「权限不够去授权」与「依赖缺失去装 docker」，不再靠 message 字符串判别
+
 ## 0.5.3 (2026-11-23)
 
 - fix: 修正 docker 权限引导——不再建议加入 docker 组（与 ADR-0018 冲突）；socket 权限错误改为「请通过内核提权通道授权，或由管理员按最小权限原则自行配置」，代码注释写明 docker 组等价 root、会绕过提权审计

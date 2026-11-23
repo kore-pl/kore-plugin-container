@@ -92,7 +92,8 @@ kore 的容器管理插件：**通过宿主机已安装的 `docker` CLI 真实�
 | 二次确认 | stop/restart 缺 `confirm=true` → `E_INVALID`，不执行任何 docker 命令 |
 | env 脱敏 | 名称含 `PASS` / `TOKEN` / `SECRET` / `KEY`（大小写不敏感）的环境变量值替换为 `***`，变量名保留 |
 | 命令超时 | 单条 docker 命令 20s，超时终止并返回 `E_UPSTREAM` |
-| 平台/依赖缺失 | 非 Linux、找不到 docker CLI、daemon 不可达、无 socket 权限 → `E_UNSUPPORTED` + 可操作说明 |
+| 平台/依赖缺失 | 非 Linux、找不到 docker CLI、daemon 不可达 → `E_UNSUPPORTED` + 可操作说明 |
+| 权限不足 | 无 docker.sock 访问权 → `E_NEED_ROOT` + 提示经内核提权通道（`root_actions`）授权（ADR-0018 降级矩阵）；不引导加入 docker 组 |
 | 资源 | 无后台 goroutine / ticker；每次请求按需起子进程，结束即回收 |
 
 保护名单默认会把「承载插件自身的容器」纳入：从 `/proc/self/cgroup` 提取 64 位容器 ID，
@@ -115,7 +116,8 @@ kore 的容器管理插件：**通过宿主机已安装的 `docker` CLI 真实�
 | 参数形状 / ID 非法 / 缺 confirm / tail 或 timeout 越界 | `E_INVALID` |
 | 容器不存在（docker `No such container`） | `E_NOTFOUND` |
 | 命中保护名单 | `E_UNAUTHORIZED` |
-| 非 Linux / 无 docker CLI / daemon 不可达 / 无 socket 权限 | `E_UNSUPPORTED` |
+| 非 Linux / 无 docker CLI / daemon 不可达 | `E_UNSUPPORTED` |
+| 无 docker.sock 访问权（需宿主 root 授权） | `E_NEED_ROOT`（`detail.reason=need_root`） |
 | docker 超时 / 其它 CLI 失败 | `E_UPSTREAM` |
 | 停止的容器读 stats | `E_CONFLICT` |
 | 结果序列化失败 | `E_INTERNAL` |

@@ -360,9 +360,14 @@ func classify(err error) *pluginapi.Error {
 	}
 	var opErr *OpError
 	if errors.As(err, &opErr) {
-		if opErr.Code == pluginapi.E_UNSUPPORTED {
-			// docker CLI 缺失 / daemon 不可达 / socket 无权：显式 docker_missing，供前端区分。
+		switch opErr.Code {
+		case pluginapi.E_UNSUPPORTED:
+			// docker CLI 缺失 / daemon 不可达：显式 docker_missing，供前端区分。
 			return reasonError(opErr.Code, opErr.Message, ExecReasonDockerMissing)
+		case pluginapi.E_NEED_ROOT:
+			// ADR-0018 降级矩阵：docker.sock 无权访问 → E_NEED_ROOT。
+			// reason 与 docker_missing 分开，前端据此展示「去授权」而不是「去装 docker」。
+			return reasonError(opErr.Code, opErr.Message, ExecReasonNeedRoot)
 		}
 		return &pluginapi.Error{Code: opErr.Code, Message: opErr.Message}
 	}
@@ -386,6 +391,8 @@ const (
 	ExecReasonEscapeFlag      = "escape_flag"
 	ExecReasonConfirmRequired = "confirm_required"
 	ExecReasonDockerMissing   = "docker_missing"
+	// ExecReasonNeedRoot 表示 docker.sock 无权访问（ADR-0018：需宿主 root 经提权通道授权）。
+	ExecReasonNeedRoot = "need_root"
 )
 
 func notFound(msg string) *pluginapi.Error {
