@@ -44,6 +44,11 @@ func (r *Runtime) Call(method string, params json.RawMessage) (json.RawMessage, 
 	if !ok {
 		return nil, notFound("未知方法: " + method)
 	}
+	// exec / shell / attach 明确不做：即使调用方直接构造方法名，也在触达 docker 前拒绝。
+	if isDeniedVerb(verb) {
+		return nil, unsupported("container 插件不提供 " + verb +
+			"：插件进程以低权身份运行，容器内命令执行等同绕过插件权限模型（ADR-0018）；容器编排不在 v1 范围（G-11）")
+	}
 	switch verb {
 	case "list":
 		return r.callList(params)
@@ -55,6 +60,16 @@ func (r *Runtime) Call(method string, params json.RawMessage) (json.RawMessage, 
 		return r.callAction(verb, params)
 	case "stats":
 		return r.callStats(params)
+	case "images":
+		return r.callImages()
+	case "pull":
+		return r.callPull(params)
+	case "rmi":
+		return r.callRemoveImage(params)
+	case "update":
+		return r.callUpdate(params)
+	case "health":
+		return r.callHealth(params)
 	default:
 		return nil, notFound("未知方法: " + method)
 	}
@@ -70,7 +85,9 @@ func businessVerb(method string) (string, bool) {
 		return "", false
 	}
 	switch verb {
-	case "list", "inspect", "logs", "start", "stop", "restart", "stats":
+	case "list", "inspect", "logs", "start", "stop", "restart", "stats",
+		"images", "pull", "rmi", "update", "health",
+		"exec", "shell", "attach":
 		return verb, true
 	default:
 		return "", false
@@ -117,7 +134,7 @@ func (r *Runtime) callInspect(raw json.RawMessage) (json.RawMessage, *pluginapi.
 	return encode(*result)
 }
 
-// callLogs 处理 container.logs：tail 缺省 100，范围 1..2000。
+// callLogs 处理 container.logs：tail 缺省 200，范围 1..2000。
 func (r *Runtime) callLogs(raw json.RawMessage) (json.RawMessage, *pluginapi.Error) {
 	var p logsParams
 	if perr := decodeParams(raw, &p); perr != nil {
@@ -211,6 +228,117 @@ func (r *Runtime) callStats(raw json.RawMessage) (json.RawMessage, *pluginapi.Er
 		return nil, classify(err)
 	}
 	return encode(result)
+}
+
+// callImages 处理 container.images：只读列出本机镜像，不触达网络。
+func (r *Runtime) callImages() (json.RawMessage, *pluginapi.Error) {
+	images, err := r.exec.Images()
+	if err != nil {
+		return nil, classify(err)
+	}
+	if images == nil {
+		images = []ImageEntry{}
+	}
+	return encode(ImagesResult{Images: images, Count: len(images)})
+}
+
+// callPull 处理 container.pull：必须 confirm=true（显式用户触发），ref 形状先校验再触达网络。
+func (r *Runtime) callPull(raw json.RawMessage) (json.RawMessage, *pluginapi.Error) {
+	var p pullParams
+	if perr := decodeParams(raw, &p); perr != nil {
+		return nil, perr
+	}
+	if perr := ValidateImageRef(p.Ref); perr != nil {
+		return nil, perr
+	}
+	if !p.Confirm {
+		return nil, invalid("pull 会联网拉取镜像，需要二次确认：请传 confirm=true 后重试")
+	}
+	result, err := r.exec.Pull(p.Ref)
+	if err != nil {
+		return nil, classify(err)
+	}
+	return encode(result)
+}
+
+// callRemoveImage 处理 container.rmi：必须 confirm=true，force 可选。
+func (r *Runtime) callRemoveImage(raw json.RawMessage) (json.RawMessage, *pluginapi.Error) {
+	var p rmiParams
+	if perr := decodeParams(raw, &p); perr != nil {
+		return nil, perr
+	}
+	if perr := ValidateImageRef(p.Ref); perr != nil {
+		return nil, perr
+	}
+	if !p.Confirm {
+		return nil, invalid("rmi 会删除镜像，需要二次确认：请传 confirm=true 后重试")
+	}
+	if err := r.exec.RemoveImage(p.Ref, p.Force); err != nil {
+		return nil, classify(err)
+	}
+	return encode(ImageRemoveResult{Ref: p.Ref, OK: true, Force: p.Force})
+}
+
+// callUpdate 处理 container.update：改内存 / CPU 限额，必须 confirm=true；
+// 写入前先解析容器真实身份并过保护名单，与 start/stop/restart 同口径。
+func (r *Runtime) callUpdate(raw json.RawMessage) (json.RawMessage, *pluginapi.Error) {
+	var p updateParams
+	if perr := decodeParams(raw, &p); perr != nil {
+		return nil, perr
+	}
+	if perr := ValidateID(p.ID); perr != nil {
+		return nil, perr
+	}
+	if !p.Confirm {
+		return nil, invalid("update 会修改容器资源限额，需要二次确认：请传 confirm=true 后重试")
+	}
+	if p.MemoryBytes == nil && p.CPUs == nil {
+		return nil, invalid("update 至少需要 memory_bytes 或 cpus 之一")
+	}
+	if p.MemoryBytes != nil && (*p.MemoryBytes < MinUpdateMemoryBytes || *p.MemoryBytes > MaxUpdateMemoryBytes) {
+		return nil, invalid(fmt.Sprintf("memory_bytes 必须在 %d..%d 字节之间（6 MiB..1 TiB）",
+			MinUpdateMemoryBytes, MaxUpdateMemoryBytes))
+	}
+	if p.CPUs != nil && (*p.CPUs < MinUpdateCPUs || *p.CPUs > MaxUpdateCPUs) {
+		return nil, invalid(fmt.Sprintf("cpus 必须在 %.2f..%.0f 之间", MinUpdateCPUs, MaxUpdateCPUs))
+	}
+	ref, err := r.exec.Resolve(p.ID)
+	if err != nil {
+		return nil, classify(err)
+	}
+	if perr := CheckProtected(ref, r.opts.Protected); perr != nil {
+		return nil, perr
+	}
+	if err := r.exec.Update(ref.ID, ContainerUpdate{MemoryBytes: p.MemoryBytes, CPUs: p.CPUs}); err != nil {
+		return nil, classify(err)
+	}
+	return encode(UpdateResult{ID: ref.ID, OK: true, MemoryBytes: p.MemoryBytes, CPUs: p.CPUs})
+}
+
+// callHealth 处理 container.health：投影 inspect 已有的 state/health 字段，不额外起子进程。
+func (r *Runtime) callHealth(raw json.RawMessage) (json.RawMessage, *pluginapi.Error) {
+	var p inspectParams
+	if perr := decodeParams(raw, &p); perr != nil {
+		return nil, perr
+	}
+	if perr := ValidateID(p.ID); perr != nil {
+		return nil, perr
+	}
+	result, err := r.exec.Inspect(p.ID)
+	if err != nil {
+		return nil, classify(err)
+	}
+	if result == nil {
+		return nil, notFound("容器不存在: " + p.ID)
+	}
+	return encode(HealthResult{
+		ID:           result.ID,
+		Status:       result.State.Status,
+		Health:       result.Health,
+		Running:      result.State.Running,
+		RestartCount: result.State.RestartCount,
+		StartedAt:    result.State.StartedAt,
+	})
 }
 
 // classify 把执行面错误映射为协议错误码：四类故障各有对应，其次 OpError，最后 E_INTERNAL。

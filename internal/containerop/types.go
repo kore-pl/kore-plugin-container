@@ -29,6 +29,17 @@ const (
 	MaxLogBytes = 2 << 20
 	// MaxStopTimeout 是 stop/restart 的优雅退出等待上限（秒）。
 	MaxStopTimeout = 300
+	// MaxPullOutputBytes 是 container.pull 采集 docker 输出的总预算，超出丢弃并标记 truncated。
+	MaxPullOutputBytes = 64 << 10
+	// MaxImageRefLen 是镜像引用（名称:tag / digest）的长度上限。
+	MaxImageRefLen = 255
+	// MinUpdateMemoryBytes / MaxUpdateMemoryBytes 是 container.update 的内存限额区间：
+	// 下限取 docker 引擎允许的最小值 6 MiB，上限 1 TiB（防误传天文数字）。
+	MinUpdateMemoryBytes int64 = 6 << 20
+	MaxUpdateMemoryBytes int64 = 1 << 40
+	// MinUpdateCPUs / MaxUpdateCPUs 是 container.update 的 CPU 核数区间。
+	MinUpdateCPUs = 0.01
+	MaxUpdateCPUs = 1024.0
 )
 
 // FaultKind 标识一次故障注入的类别（与 process / db-mysql 插件同一口径）。
@@ -90,6 +101,56 @@ type ListResult struct {
 	Containers []ContainerEntry `json:"containers"`
 	Count      int              `json:"count"`
 	All        bool             `json:"all"`
+}
+
+// ImageEntry 是 container.images 返回的单条镜像记录；字段显式列出，不使用 any / object。
+type ImageEntry struct {
+	ID         string `json:"id"`
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	Size       string `json:"size"`
+	Created    string `json:"created"`
+	// Dangling 表示 <none>:<none> 的悬空镜像（无 repository/tag 引用）。
+	Dangling bool `json:"dangling"`
+}
+
+// ImagesResult 是 container.images 的结构。
+type ImagesResult struct {
+	Images []ImageEntry `json:"images"`
+	Count  int          `json:"count"`
+}
+
+// PullResult 是 container.pull 的结构；message 是 docker 输出的末行摘要。
+type PullResult struct {
+	Ref       string `json:"ref"`
+	OK        bool   `json:"ok"`
+	Message   string `json:"message"`
+	Truncated bool   `json:"truncated"`
+}
+
+// ImageRemoveResult 是 container.rmi 的结构。
+type ImageRemoveResult struct {
+	Ref   string `json:"ref"`
+	OK    bool   `json:"ok"`
+	Force bool   `json:"force"`
+}
+
+// UpdateResult 是 container.update 的结构；未指定的限额不出现在结果里。
+type UpdateResult struct {
+	ID          string   `json:"id"`
+	OK          bool     `json:"ok"`
+	MemoryBytes *int64   `json:"memory_bytes,omitempty"`
+	CPUs        *float64 `json:"cpus,omitempty"`
+}
+
+// HealthResult 是 container.health 的结构：投影 inspect 已有的 state/health 字段。
+type HealthResult struct {
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	Health       string `json:"health"`
+	Running      bool   `json:"running"`
+	RestartCount int64  `json:"restart_count"`
+	StartedAt    string `json:"started_at"`
 }
 
 // InspectState 是 container.inspect 的 state 子结构。
@@ -201,6 +262,12 @@ type ContainerRef struct {
 	Name string
 }
 
+// ContainerUpdate 是 container.update 要落地的资源限额；nil 字段表示本次不修改。
+type ContainerUpdate struct {
+	MemoryBytes *int64
+	CPUs        *float64
+}
+
 // Executor 是容器操作执行面：真实实现是本机 docker CLI，测试可注入故障或假数据。
 type Executor interface {
 	// List 列出容器；all=true 时包含已停止容器。
@@ -217,6 +284,14 @@ type Executor interface {
 	Restart(id string, timeout int) error
 	// Stats 读取一次无流式统计。
 	Stats(id string) (StatsResult, error)
+	// Images 列出本机镜像。
+	Images() ([]ImageEntry, error)
+	// Pull 显式拉取镜像；只在用户显式触发（confirm=true）时调用。
+	Pull(ref string) (PullResult, error)
+	// RemoveImage 删除镜像；force=true 时追加 --force。
+	RemoveImage(ref string, force bool) error
+	// Update 修改容器的内存 / CPU 限额。
+	Update(id string, update ContainerUpdate) error
 	// Resolve 解析容器的完整 ID 与名称，用于保护名单校验。
 	Resolve(id string) (ContainerRef, error)
 }
@@ -254,7 +329,7 @@ type inspectParams struct {
 	ID string `json:"id"`
 }
 
-// logsParams 是 container.logs 入参；tail 缺省 100，since 可选（docker --since 原样传参）。
+// logsParams 是 container.logs 入参；tail 缺省 200，since 可选（docker --since 原样传参）。
 type logsParams struct {
 	ID    string `json:"id"`
 	Tail  *int   `json:"tail"`
@@ -266,4 +341,25 @@ type actionParams struct {
 	ID      string `json:"id"`
 	Confirm bool   `json:"confirm"`
 	Timeout *int   `json:"timeout"`
+}
+
+// pullParams 是 container.pull 入参：ref 是镜像引用，必须显式 confirm 才触达网络。
+type pullParams struct {
+	Ref     string `json:"ref"`
+	Confirm bool   `json:"confirm"`
+}
+
+// rmiParams 是 container.rmi 入参：ref 是镜像引用或 ID，必须显式 confirm。
+type rmiParams struct {
+	Ref     string `json:"ref"`
+	Confirm bool   `json:"confirm"`
+	Force   bool   `json:"force"`
+}
+
+// updateParams 是 container.update 入参：memory_bytes / cpus 至少给一个，必须显式 confirm。
+type updateParams struct {
+	ID          string   `json:"id"`
+	MemoryBytes *int64   `json:"memory_bytes"`
+	CPUs        *float64 `json:"cpus"`
+	Confirm     bool     `json:"confirm"`
 }

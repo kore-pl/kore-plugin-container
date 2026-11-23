@@ -8,6 +8,7 @@ type fakeExecutor struct {
 	inspect *containerop.InspectResult
 	logs    containerop.LogsResult
 	stats   containerop.StatsResult
+	images  []containerop.ImageEntry
 	ref     containerop.ContainerRef
 	err     error
 	calls   []string
@@ -76,6 +77,32 @@ func (f *fakeExecutor) Stats(id string) (containerop.StatsResult, error) {
 		return containerop.StatsResult{}, f.err
 	}
 	return f.stats, nil
+}
+
+func (f *fakeExecutor) Images() ([]containerop.ImageEntry, error) {
+	f.calls = append(f.calls, "images")
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.images, nil
+}
+
+func (f *fakeExecutor) Pull(ref string) (containerop.PullResult, error) {
+	f.calls = append(f.calls, "pull")
+	if f.err != nil {
+		return containerop.PullResult{}, f.err
+	}
+	return containerop.PullResult{Ref: ref, OK: true, Message: "Status: Downloaded newer image for " + ref}, nil
+}
+
+func (f *fakeExecutor) RemoveImage(ref string, force bool) error {
+	f.calls = append(f.calls, "rmi")
+	return f.err
+}
+
+func (f *fakeExecutor) Update(id string, update containerop.ContainerUpdate) error {
+	f.calls = append(f.calls, "update")
+	return f.err
 }
 
 func (f *fakeExecutor) Resolve(id string) (containerop.ContainerRef, error) {

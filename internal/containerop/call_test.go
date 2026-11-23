@@ -14,6 +14,10 @@ type testExecutor struct {
 	inspect *InspectResult
 	logs    LogsResult
 	stats   StatsResult
+	images  []ImageEntry
+	updated *ContainerUpdate
+	removed []string
+	pulled  []string
 	ref     ContainerRef
 	err     error
 	calls   []string
@@ -54,6 +58,32 @@ func (e *testExecutor) Stats(id string) (StatsResult, error) {
 	return e.stats, e.err
 }
 
+func (e *testExecutor) Images() ([]ImageEntry, error) {
+	e.calls = append(e.calls, "images")
+	return e.images, e.err
+}
+
+func (e *testExecutor) Pull(ref string) (PullResult, error) {
+	e.calls = append(e.calls, "pull")
+	e.pulled = append(e.pulled, ref)
+	if e.err != nil {
+		return PullResult{}, e.err
+	}
+	return PullResult{Ref: ref, OK: true, Message: "pulled"}, nil
+}
+
+func (e *testExecutor) RemoveImage(ref string, force bool) error {
+	e.calls = append(e.calls, "rmi")
+	e.removed = append(e.removed, ref)
+	return e.err
+}
+
+func (e *testExecutor) Update(id string, update ContainerUpdate) error {
+	e.calls = append(e.calls, "update")
+	e.updated = &update
+	return e.err
+}
+
 func (e *testExecutor) Resolve(id string) (ContainerRef, error) {
 	e.calls = append(e.calls, "resolve")
 	if e.err != nil {
@@ -88,14 +118,23 @@ func callWith(t *testing.T, exec Executor, method, params string, opts Options) 
 	return Call(method, json.RawMessage(params), opts, exec)
 }
 
-// TestBusinessVerb 只接受 container.<verb>，裸动词与其它域一律拒绝。
+// TestBusinessVerb 只接受 container.<verb>，裸动词与其它域一律拒绝；
+// exec / shell / attach 属于「已识别但明确拒绝」的方法（由 Call 返回 E_UNSUPPORTED）。
 func TestBusinessVerb(t *testing.T) {
-	for _, method := range []string{"container.list", "container.inspect", "container.logs", "container.start", "container.stop", "container.restart", "container.stats"} {
+	for _, method := range []string{"container.list", "container.inspect", "container.logs",
+		"container.start", "container.stop", "container.restart", "container.stats",
+		"container.images", "container.health", "container.pull", "container.rmi", "container.update"} {
 		if _, ok := businessVerb(method); !ok {
 			t.Fatalf("%s 未被接受", method)
 		}
 	}
-	for _, method := range []string{"list", "inspect", "container.exec", "db-mysql.list", "Container.list"} {
+	for _, method := range []string{"container.exec", "container.shell", "container.attach"} {
+		verb, ok := businessVerb(method)
+		if !ok || !isDeniedVerb(verb) {
+			t.Fatalf("%s 应识别为拒绝方法", method)
+		}
+	}
+	for _, method := range []string{"list", "inspect", "db-mysql.list", "Container.list", "container.nope"} {
 		if _, ok := businessVerb(method); ok {
 			t.Fatalf("%s 不应被接受", method)
 		}
@@ -303,9 +342,9 @@ func TestInvalidParams(t *testing.T) {
 	}
 }
 
-// TestUnknownMethod 未知方法 E_NOTFOUND。
+// TestUnknownMethod 未知方法 E_NOTFOUND；exec 是明确拒绝而非未知（见 TestDeniedMethods）。
 func TestUnknownMethod(t *testing.T) {
-	_, perr := callWith(t, healthyExecutor(), "container.exec", `{}`, Options{})
+	_, perr := callWith(t, healthyExecutor(), "container.nope", `{}`, Options{})
 	if perr == nil || perr.Code != pluginapi.E_NOTFOUND {
 		t.Fatalf("未知方法错误=%v，期望 E_NOTFOUND", perr)
 	}
@@ -334,4 +373,219 @@ func containsCall(calls []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestDeniedMethods exec / shell / attach 在触达执行面之前返回 E_UNSUPPORTED。
+func TestDeniedMethods(t *testing.T) {
+	for _, method := range []string{"container.exec", "container.shell", "container.attach"} {
+		exec := healthyExecutor()
+		result, perr := callWith(t, exec, method, `{}`, Options{})
+		if perr == nil || perr.Code != pluginapi.E_UNSUPPORTED {
+			t.Fatalf("%s 错误=%v，期望 E_UNSUPPORTED", method, perr)
+		}
+		if result != nil {
+			t.Fatalf("%s 不应带结果", method)
+		}
+		if len(exec.calls) != 0 {
+			t.Fatalf("%s 不应触达执行面，实际调用=%v", method, exec.calls)
+		}
+		if !strings.Contains(perr.Message, "ADR-0018") || !strings.Contains(perr.Message, "G-11") {
+			t.Fatalf("%s 拒绝理由未引用 ADR-0018 / G-11：%q", method, perr.Message)
+		}
+	}
+}
+
+// TestCallImages 镜像列表透传并统计条数。
+func TestCallImages(t *testing.T) {
+	exec := healthyExecutor()
+	exec.images = []ImageEntry{
+		{ID: "0123456789ab", Repository: "nginx", Tag: "alpine", Size: "10MB"},
+		{ID: "abcdef012345", Repository: "<none>", Tag: "<none>", Dangling: true},
+	}
+	result, perr := callWith(t, exec, "container.images", `{}`, Options{})
+	if perr != nil {
+		t.Fatalf("images 错误: %v", perr)
+	}
+	var parsed ImagesResult
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("解析 images 失败: %v", err)
+	}
+	if parsed.Count != 2 || len(parsed.Images) != 2 {
+		t.Fatalf("images 结果不符: %+v", parsed)
+	}
+	if parsed.Images[0].Dangling {
+		t.Fatalf("首条镜像不应是 dangling: %+v", parsed.Images[0])
+	}
+	if parsed.Images[1].Dangling != true {
+		t.Fatalf("<none>:<none> 应标记 dangling: %+v", parsed.Images[1])
+	}
+}
+
+// TestCallImagesEmpty 无镜像时返回空数组而非 null。
+func TestCallImagesEmpty(t *testing.T) {
+	result, perr := callWith(t, healthyExecutor(), "container.images", `{}`, Options{})
+	if perr != nil {
+		t.Fatalf("images 错误: %v", perr)
+	}
+	if string(result) != `{"images":[],"count":0}` && !strings.Contains(string(result), `"images":[]`) {
+		t.Fatalf("空镜像结果不符: %s", result)
+	}
+}
+
+// TestCallPull pull 必须 confirm、ref 形状先校验、成功后透传摘要。
+func TestCallPull(t *testing.T) {
+	cases := []struct {
+		name   string
+		params string
+		code   string
+	}{
+		{"缺确认", `{"ref":"nginx:alpine"}`, pluginapi.E_INVALID},
+		{"空 ref", `{"ref":"","confirm":true}`, pluginapi.E_INVALID},
+		{"flag 注入", `{"ref":"--privileged","confirm":true}`, pluginapi.E_INVALID},
+		{"空白注入", `{"ref":"nginx alpine","confirm":true}`, pluginapi.E_INVALID},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			exec := healthyExecutor()
+			_, perr := callWith(t, exec, "container.pull", c.params, Options{})
+			if perr == nil || perr.Code != c.code {
+				t.Fatalf("pull 错误=%v，期望 %q", perr, c.code)
+			}
+			if containsCall(exec.calls, "pull") {
+				t.Fatalf("被拒的 pull 不应触达执行面：%v", exec.calls)
+			}
+		})
+	}
+
+	exec := healthyExecutor()
+	result, perr := callWith(t, exec, "container.pull", `{"ref":"nginx:alpine","confirm":true}`, Options{})
+	if perr != nil {
+		t.Fatalf("pull 错误: %v", perr)
+	}
+	var parsed PullResult
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("解析 pull 失败: %v", err)
+	}
+	if !parsed.OK || parsed.Ref != "nginx:alpine" {
+		t.Fatalf("pull 结果不符: %+v", parsed)
+	}
+	if len(exec.pulled) != 1 || exec.pulled[0] != "nginx:alpine" {
+		t.Fatalf("pull 未按原样传给执行面：%v", exec.pulled)
+	}
+}
+
+// TestCallRemoveImage rmi 必须 confirm，force 原样透传。
+func TestCallRemoveImage(t *testing.T) {
+	exec := healthyExecutor()
+	if _, perr := callWith(t, exec, "container.rmi", `{"ref":"nginx:alpine"}`, Options{}); perr == nil || perr.Code != pluginapi.E_INVALID {
+		t.Fatalf("rmi 缺确认错误=%v，期望 E_INVALID", perr)
+	}
+	if containsCall(exec.calls, "rmi") {
+		t.Fatalf("缺确认的 rmi 不应触达执行面：%v", exec.calls)
+	}
+	result, perr := callWith(t, exec, "container.rmi", `{"ref":"nginx:alpine","confirm":true,"force":true}`, Options{})
+	if perr != nil {
+		t.Fatalf("rmi 错误: %v", perr)
+	}
+	var parsed ImageRemoveResult
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("解析 rmi 失败: %v", err)
+	}
+	if !parsed.OK || !parsed.Force || parsed.Ref != "nginx:alpine" {
+		t.Fatalf("rmi 结果不符: %+v", parsed)
+	}
+	if len(exec.removed) != 1 || exec.removed[0] != "nginx:alpine" {
+		t.Fatalf("rmi 未按原样传给执行面：%v", exec.removed)
+	}
+}
+
+// TestCallUpdate update 的参数边界、确认与保护名单。
+func TestCallUpdate(t *testing.T) {
+	invalid := []struct {
+		name   string
+		params string
+	}{
+		{"缺确认", `{"id":"web","memory_bytes":134217728}`},
+		{"无任何字段", `{"id":"web","confirm":true}`},
+		{"内存过小", `{"id":"web","memory_bytes":1048576,"confirm":true}`},
+		{"内存过大", `{"id":"web","memory_bytes":1099511627777,"confirm":true}`},
+		{"CPU 过小", `{"id":"web","cpus":0.001,"confirm":true}`},
+		{"CPU 过大", `{"id":"web","cpus":2048,"confirm":true}`},
+		{"ID 非法", `{"id":"../etc","memory_bytes":134217728,"confirm":true}`},
+	}
+	for _, c := range invalid {
+		t.Run(c.name, func(t *testing.T) {
+			exec := healthyExecutor()
+			if _, perr := callWith(t, exec, "container.update", c.params, Options{}); perr == nil || perr.Code != pluginapi.E_INVALID {
+				t.Fatalf("update %s 错误=%v，期望 E_INVALID", c.params, perr)
+			}
+			if containsCall(exec.calls, "update") {
+				t.Fatalf("被拒的 update 不应触达执行面：%v", exec.calls)
+			}
+		})
+	}
+
+	exec := healthyExecutor()
+	result, perr := callWith(t, exec, "container.update",
+		`{"id":"web","memory_bytes":134217728,"cpus":1.5,"confirm":true}`, Options{})
+	if perr != nil {
+		t.Fatalf("update 错误: %v", perr)
+	}
+	var parsed UpdateResult
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("解析 update 失败: %v", err)
+	}
+	if !parsed.OK || parsed.MemoryBytes == nil || *parsed.MemoryBytes != 134217728 ||
+		parsed.CPUs == nil || *parsed.CPUs != 1.5 {
+		t.Fatalf("update 结果不符: %+v", parsed)
+	}
+	if exec.updated == nil || exec.updated.MemoryBytes == nil || *exec.updated.MemoryBytes != 134217728 {
+		t.Fatalf("update 未把限额传给执行面：%+v", exec.updated)
+	}
+}
+
+// TestCallUpdateProtected 保护名单命中时 update 被拒且不触达执行面。
+func TestCallUpdateProtected(t *testing.T) {
+	exec := healthyExecutor()
+	exec.ref = ContainerRef{ID: strings.Repeat("b", 64), Name: "kore"}
+	_, perr := callWith(t, exec, "container.update",
+		`{"id":"kore","memory_bytes":134217728,"confirm":true}`,
+		Options{Protected: []string{"kore"}})
+	if perr == nil || perr.Code != pluginapi.E_UNAUTHORIZED {
+		t.Fatalf("受保护容器 update 错误=%v，期望 E_UNAUTHORIZED", perr)
+	}
+	if containsCall(exec.calls, "update") {
+		t.Fatalf("受保护容器不应触达 update：%v", exec.calls)
+	}
+}
+
+// TestCallHealth health 投影 inspect 的 state/health 字段。
+func TestCallHealth(t *testing.T) {
+	exec := healthyExecutor()
+	exec.inspect = &InspectResult{
+		ID: "web", Health: "healthy",
+		State: InspectState{Status: "running", Running: true, RestartCount: 3, StartedAt: "2026-11-23T00:00:00Z"},
+	}
+	result, perr := callWith(t, exec, "container.health", `{"id":"web"}`, Options{})
+	if perr != nil {
+		t.Fatalf("health 错误: %v", perr)
+	}
+	var parsed HealthResult
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("解析 health 失败: %v", err)
+	}
+	if parsed.Health != "healthy" || parsed.Status != "running" || !parsed.Running ||
+		parsed.RestartCount != 3 || parsed.StartedAt != "2026-11-23T00:00:00Z" {
+		t.Fatalf("health 结果不符: %+v", parsed)
+	}
+}
+
+// TestCallHealthMissing 容器不存在时 E_NOTFOUND。
+func TestCallHealthMissing(t *testing.T) {
+	exec := healthyExecutor()
+	exec.inspect = nil
+	_, perr := callWith(t, exec, "container.health", `{"id":"web"}`, Options{})
+	if perr == nil || perr.Code != pluginapi.E_NOTFOUND {
+		t.Fatalf("缺失容器 health 错误=%v，期望 E_NOTFOUND", perr)
+	}
 }

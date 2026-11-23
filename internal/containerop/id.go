@@ -44,6 +44,25 @@ func ValidateSince(raw string) *pluginapi.Error {
 	return invalid("since 非法：支持 Go 时长（如 10m）、Unix 秒或 RFC3339 时间戳")
 }
 
+// imageRefRE 是镜像引用（名称[:tag][@digest]）的合法形状：
+// 首字符必须是字母或数字（封死 - 开头的 flag 注入），其余仅允许字母数字与 . _ / : @ -。
+// 与容器标识同口径：形状校验只防误传与 flag 注入，语义合法性由 docker 判定。
+var imageRefRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`)
+
+// ValidateImageRef 校验镜像引用形状；不访问网络、不触达 docker。
+func ValidateImageRef(raw string) *pluginapi.Error {
+	if raw == "" {
+		return invalid("镜像引用不能为空")
+	}
+	if len(raw) > MaxImageRefLen {
+		return invalid(fmt.Sprintf("镜像引用过长（上限 %d 字符）", MaxImageRefLen))
+	}
+	if !imageRefRE.MatchString(raw) {
+		return invalid("镜像引用非法：须以字母或数字开头，仅含字母数字与 . _ / : @ -（拒绝空白、引号、$() 与 - 开头）")
+	}
+	return nil
+}
+
 // CheckProtected 判断容器是否命中保护名单。
 // 名单项可以是名称、完整 64 位 ID，或 ≥6 位的十六进制短 ID；命中返回 E_UNAUTHORIZED。
 func CheckProtected(ref ContainerRef, protected []string) *pluginapi.Error {

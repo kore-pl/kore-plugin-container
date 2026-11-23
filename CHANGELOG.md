@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 (2026-11-23)
+
+- feat: `info.json` 新增方法级 `method_capabilities`（12 条）：读方法 `list` / `inspect` /
+  `logs` / `stats` / `images` / `health` → `system:read`；写方法 `start` / `stop` /
+  `restart` / `pull` / `rmi` / `update` → `system:admin`。此前只有插件级 capability，
+  内核按方法授权与审计的粒度不足（§3.5 #12）
+- feat: `container.images`（只读列镜像，`docker images --format '{{json .}}'`，含 `dangling` 标记）
+- feat: `container.health`（投影 inspect 已有的 `state`/`health` 字段，不额外起 docker 子进程）
+- feat: `container.update`（`docker update --memory/--cpus` 改资源限额，至少给一项；
+  必须 `confirm=true`；写前解析容器真实身份并过保护名单）
+- feat: `container.pull` / `container.rmi` 显式镜像管理；`pull` 只由用户显式触发
+  （`confirm=true`），插件不做后台拉取、无 ticker；输出受 64 KiB 预算限制
+- security: **明确不做 `exec` / `shell` / `attach`**——插件进程按 ADR-0018 保持低权
+  （真 root 部署下降权到 `kore-<id>`），容器内命令执行等同绕过插件权限模型，且容器
+  编排属 G-11 不做项。调用 `container.exec` 等方法在触达 docker 前返回
+  `E_UNSUPPORTED` 并说明理由；没有白名单命令、没有交互式入口、没有输出采集面
+- security: 镜像引用形状校验（首字符字母/数字，仅字母数字与 `. _ / : @ -`，上限 255）
+  在触达 docker 前拒绝空白、引号、`$()` 与 `-` 开头的 flag 注入；`rmi` 被运行中容器
+  引用时映射 `E_CONFLICT`，拉取鉴权失败映射 `E_UNAUTHORIZED`
+- test: `info.json` 的 `method_capabilities` 与代码方法表逐条一致性表驱动测试（含
+  capability 分类与「无遗漏 / 无多余」）；镜像解析、`pull`/`rmi`/`update` 参数与确认、
+  保护名单拒绝、`health` 投影、`exec`/`shell` 拒绝用例
+- docs: README 补齐新方法、安全护栏与权限矩阵；`logs` 注释里的「缺省 100」更正为 200
+
 ## 0.3.0 (2026-11-23)
 
 - feat: `container.logs` 新增可选 `since`（原样作为 `docker logs --since` 的 argv 元素，

@@ -150,6 +150,79 @@ func (c *Client) Stats(id string) (StatsResult, error) {
 	return *result, nil
 }
 
+// Images 执行 docker images --format '{{json .}}' 并解析为结构化条目。
+// 只读、无联网：镜像拉取是独立方法 container.pull。
+func (c *Client) Images() ([]ImageEntry, error) {
+	out, err := c.run("images", "--format", "{{json .}}")
+	if err != nil {
+		return nil, err
+	}
+	images, err := parseImagesOutput(out)
+	if err != nil {
+		return nil, opErrorf(pluginapi.E_UPSTREAM, "%s", err.Error())
+	}
+	return images, nil
+}
+
+// Pull 执行 docker pull <ref>；输出受 MaxPullOutputBytes 预算限制并取末行作为摘要。
+// 只在用户显式确认（confirm=true）后由 Call 触发，插件自身不做后台拉取。
+func (c *Client) Pull(ref string) (PullResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	cmd, err := c.command(ctx, "pull", ref)
+	if err != nil {
+		return PullResult{}, err
+	}
+	buffer := newCappedBuffer(MaxPullOutputBytes)
+	cmd.Stdout = buffer
+	cmd.Stderr = buffer
+	runErr := cmd.Run()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return PullResult{}, timeoutError(c.timeout)
+	}
+	if runErr != nil {
+		return PullResult{}, c.execError(runErr, buffer.String())
+	}
+	return PullResult{Ref: ref, OK: true, Message: lastNonEmptyLine(buffer.String()), Truncated: buffer.Truncated()}, nil
+}
+
+// RemoveImage 执行 docker rmi [--force] <ref>。
+func (c *Client) RemoveImage(ref string, force bool) error {
+	args := []string{"rmi"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, ref)
+	_, err := c.run(args...)
+	return err
+}
+
+// Update 执行 docker update 修改容器内存 / CPU 限额；两个字段至少一个由 Call 保证非空。
+func (c *Client) Update(id string, update ContainerUpdate) error {
+	args := []string{"update"}
+	if update.MemoryBytes != nil {
+		args = append(args, "--memory", strconv.FormatInt(*update.MemoryBytes, 10))
+	}
+	if update.CPUs != nil {
+		args = append(args, "--cpus", strconv.FormatFloat(*update.CPUs, 'f', -1, 64))
+	}
+	args = append(args, id)
+	_, err := c.run(args...)
+	return err
+}
+
+// lastNonEmptyLine 取多行文本的最后一个非空行并截断，作为 pull 的结果摘要。
+func lastNonEmptyLine(raw string) string {
+	lines := strings.Split(raw, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line != "" {
+			return truncateRunes(line, 300)
+		}
+	}
+	return ""
+}
+
 // command 构造固定 argv 的子进程；docker 未安装时返回 E_UNSUPPORTED。
 func (c *Client) command(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	path, err := exec.LookPath(c.bin)
@@ -208,8 +281,19 @@ func (c *Client) execError(err error, stderr string) error {
 		(strings.Contains(lower, "docker.sock") || strings.Contains(lower, "unix:///var/run/docker")):
 		return opErrorf(pluginapi.E_UNSUPPORTED,
 			"无权访问 Docker socket：请将用户加入 docker 组，或配置 DOCKER_HOST（%s）", truncateRunes(text, 300))
-	case strings.Contains(lower, "no such container"), strings.Contains(lower, "no such object"):
-		return opErrorf(pluginapi.E_NOTFOUND, "容器不存在（%s）", truncateRunes(text, 300))
+	case strings.Contains(lower, "no such container"), strings.Contains(lower, "no such object"),
+		strings.Contains(lower, "no such image"), strings.Contains(lower, "manifest unknown"):
+		return opErrorf(pluginapi.E_NOTFOUND, "容器或镜像不存在（%s）", truncateRunes(text, 300))
+	case strings.Contains(lower, "pull access denied"), strings.Contains(lower, "authentication required"),
+		strings.Contains(lower, "unauthorized: authentication"):
+		return opErrorf(pluginapi.E_UNAUTHORIZED,
+			"镜像拉取被拒：私有镜像需先 docker login，或确认镜像名拼写（%s）", truncateRunes(text, 300))
+	case strings.Contains(lower, "image is being used by running container"),
+		strings.Contains(lower, "image is being used by stopped container"):
+		return opErrorf(pluginapi.E_CONFLICT,
+			"镜像仍被容器引用，无法删除：先删除引用它的容器，或改用 force=true（%s）", truncateRunes(text, 300))
+	case strings.Contains(lower, "invalid reference format"):
+		return opErrorf(pluginapi.E_INVALID, "镜像引用格式不合法（%s）", truncateRunes(text, 300))
 	}
 	if text == "" {
 		text = err.Error()

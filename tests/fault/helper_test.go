@@ -1,7 +1,7 @@
 //go:build linux
 
 // Package fault 对 container 插件做四类故障注入（kill / timeout / disk / cgroup）：
-// 每个用例把可控执行面替换为始终返回 FaultError 的实现，断言七个方法都把执行面
+// 每个用例把可控执行面替换为始终返回 FaultError 的实现，断言十二个方法都把执行面
 // 故障映射成结构化协议错误码，而不是 panic 或伪成功。
 package fault
 
@@ -46,6 +46,22 @@ func (f faultExecutor) Stats(string) (containerop.StatsResult, error) {
 	return containerop.StatsResult{}, containerop.NewFaultError(f.kind, "stats 执行面故障")
 }
 
+func (f faultExecutor) Images() ([]containerop.ImageEntry, error) {
+	return nil, containerop.NewFaultError(f.kind, "images 执行面故障")
+}
+
+func (f faultExecutor) Pull(string) (containerop.PullResult, error) {
+	return containerop.PullResult{}, containerop.NewFaultError(f.kind, "pull 执行面故障")
+}
+
+func (f faultExecutor) RemoveImage(string, bool) error {
+	return containerop.NewFaultError(f.kind, "rmi 执行面故障")
+}
+
+func (f faultExecutor) Update(string, containerop.ContainerUpdate) error {
+	return containerop.NewFaultError(f.kind, "update 执行面故障")
+}
+
 func (f faultExecutor) Resolve(string) (containerop.ContainerRef, error) {
 	return containerop.ContainerRef{}, containerop.NewFaultError(f.kind, "resolve 执行面故障")
 }
@@ -63,9 +79,14 @@ var methods = []struct {
 	{"stop", "container.stop", `{"id":"web","confirm":true}`},
 	{"restart", "container.restart", `{"id":"web","confirm":true}`},
 	{"stats", "container.stats", `{"id":"web"}`},
+	{"images", "container.images", `{}`},
+	{"health", "container.health", `{"id":"web"}`},
+	{"pull", "container.pull", `{"ref":"nginx:alpine","confirm":true}`},
+	{"rmi", "container.rmi", `{"ref":"nginx:alpine","confirm":true}`},
+	{"update", "container.update", `{"id":"web","memory_bytes":134217728,"confirm":true}`},
 }
 
-// assertFault 对七个方法注入同一类故障，断言 nil 结果 + 预期错误码与类别关键词。
+// assertFault 对十二个方法注入同一类故障，断言 nil 结果 + 预期错误码与类别关键词。
 func assertFault(t *testing.T, kind containerop.FaultKind, wantCode, wantHint string) {
 	t.Helper()
 	for _, m := range methods {
@@ -113,11 +134,23 @@ func (healthyExecutor) Stats(string) (containerop.StatsResult, error) {
 	return containerop.StatsResult{ID: "web", PIDs: 1}, nil
 }
 
+func (healthyExecutor) Images() ([]containerop.ImageEntry, error) {
+	return []containerop.ImageEntry{{ID: "0123456789ab", Repository: "nginx", Tag: "alpine"}}, nil
+}
+
+func (healthyExecutor) Pull(string) (containerop.PullResult, error) {
+	return containerop.PullResult{Ref: "nginx:alpine", OK: true, Message: "pulled"}, nil
+}
+
+func (healthyExecutor) RemoveImage(string, bool) error { return nil }
+
+func (healthyExecutor) Update(string, containerop.ContainerUpdate) error { return nil }
+
 func (healthyExecutor) Resolve(string) (containerop.ContainerRef, error) {
 	return containerop.ContainerRef{ID: strings.Repeat("a", 64), Name: "web"}, nil
 }
 
-// sanityNoFault 验证无故障时七个方法均正常返回。
+// sanityNoFault 验证无故障时十二个方法均正常返回。
 func sanityNoFault(t *testing.T) {
 	t.Helper()
 	for _, m := range methods {

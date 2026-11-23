@@ -83,6 +83,41 @@ func normalizeCreated(raw string) string {
 	return raw
 }
 
+// imageRow 是 `docker images --format '{{json .}}'` 单行输出的字段子集。
+type imageRow struct {
+	ID         string `json:"ID"`
+	Repository string `json:"Repository"`
+	Tag        string `json:"Tag"`
+	CreatedAt  string `json:"CreatedAt"`
+	Size       string `json:"Size"`
+}
+
+// parseImagesOutput 解析 docker images 的逐行 JSON 输出（json.Decoder 支持连续对象）。
+func parseImagesOutput(data []byte) ([]ImageEntry, error) {
+	images := make([]ImageEntry, 0)
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	for {
+		var row imageRow
+		err := decoder.Decode(&row)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("解析 docker images JSON 行失败: %w", err)
+		}
+		entry := ImageEntry{
+			ID:         strings.TrimSpace(row.ID),
+			Repository: strings.TrimSpace(row.Repository),
+			Tag:        strings.TrimSpace(row.Tag),
+			Size:       strings.TrimSpace(row.Size),
+			Created:    normalizeCreated(row.CreatedAt),
+		}
+		entry.Dangling = entry.Repository == "<none>" && entry.Tag == "<none>"
+		images = append(images, entry)
+	}
+	return images, nil
+}
+
 // rawInspect 是 `docker inspect` 单容器的字段子集；只解析本插件对外暴露的字段。
 type rawInspect struct {
 	ID           string            `json:"Id"`
