@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 (2026-11-23)
+
+### Changed
+
+- 提升为 `production` 深度等级（`depth_level`），故障注入测试已覆盖 6 个场景
+
 ## 0.4.0 (2026-11-23)
 
 - feat: `info.json` 新增方法级 `method_capabilities`（12 条）：读方法 `list` / `inspect` /
