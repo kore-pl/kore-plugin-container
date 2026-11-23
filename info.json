@@ -22,7 +22,7 @@
   "scenario_tags": [
     "ops"
   ],
-  "size_bytes": 1529744,
+  "size_bytes": 1530284,
   "method_capabilities": {
     "container.list": "system:read",
     "container.inspect": "system:read",
