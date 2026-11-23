@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1 (2026-11-23)
+
+- build(dist): 定位 `size_bytes` ±1/±2 根因——该字段写在 `info.json` 内、info.json 又在包内（**自指**），且改数字会同时改变 deflate 匹配与 `SHA256SUMS` 里的 info.json 摘要，映射**非单调**（61 点窗口实测 -29..+32 字节跳变）；`make dist` 改为**先搜精确不动点（±64 窗口，声明 == 实测）**，找不到才回退 ±2 并打 WARN（口径：声明值仅供预检，权威尺寸=release 资产实测）
+- chore: 本仓示例——size_bytes 由 1527625 收敛到 **1527627**（与实测逐字相等）
+
 ## 0.5.0 (2026-11-23)
 
 - feat: `container.exec` 一次性命令执行——固定 argv、不经 shell；`timeout_ms` 缺省/越界夹取到 **30s** 并标 `timeout_clamped`；stdout/stderr 各截断 **256 KiB**（标 `truncated`）；默认容器内**非 root**（`user` 可显式指定），root 需 `root:true` + `confirm:true`；内置拒绝清单与逃逸参数拦截

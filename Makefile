@@ -27,9 +27,10 @@ build:
 #   5. 压缩：gzip -9n（-n 不写原名与时间戳）
 #   6. 构建环境：GOWORK=off 隔离外部 go.work，避免依赖解析漂移
 #
-# size_bytes 收敛：每轮从**包内** info.json 读回声明值，与包体实际字节数相差 ≤2 字节即收口
-# （gzip 对数字位变化的长度抖动为 ±数字节，严格相等并非总有解）。先做迭代（上限 10 轮），
-# 迭代在 2-周期里打转时在实测包体 ±24 字节窗口内搜固定点（优先精确相等）。
+# size_bytes 是**自指估算值**：它写在 info.json 里、info.json 又在包内，改这个数字会改包体。
+# 且映射**非单调**——改 1 个数字位会同时改变 deflate 匹配与 SHA256SUMS 里的 info.json 摘要，
+# gzip 长度实测跳变可达 -29..+32 字节（container 61 点窗口实测），单调迭代会跳过精确点。
+# 因此策略：**先按固定顺序在 ±64 窗口搜精确不动点（声明 == 实测）**；找不到才回退 ±2 并告警。
 # 收口值写回 info.json，故重复执行 dist 幂等：下一轮第一次打包即命中同一判决。
 # 最终仍未满足 ±2 → exit 1，绝不静默接受。
 dist: build
@@ -51,20 +52,19 @@ dist: build
 	x=$$(sed -n 's/.*"size_bytes"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' info.json | head -n 1); \
 	if [ -z "$$x" ]; then x=0; fi; \
 	chosen=""; \
-	for _ in 1 2 3 4 5 6 7 8 9 10; do \
-		a=$$(mkpkg $$x); \
-		d=$$(( a - x )); if [ "$$d" -lt 0 ]; then d=$$(( 0 - d )); fi; \
-		if [ "$$d" -le 2 ]; then chosen=$$x; break; fi; \
-		x=$$a; \
+	for cand in $$(seq $$(( x - 64 )) $$(( x + 64 ))); do \
+		if [ "$$cand" -lt 1 ]; then continue; fi; \
+		v=$$(mkpkg $$cand); \
+		if [ "$$v" = "$$cand" ]; then chosen=$$cand; break; fi; \
 	done; \
 	if [ -z "$$chosen" ]; then \
-		best=""; \
-		bestd=99; \
-		for cand in $$(seq $$(( a - 24 )) $$(( a + 24 ))); do \
+		echo "[WARN] 无精确不动点，回退 ±2 估算值（size_bytes 仅供预检，权威尺寸以 release 资产实测为准）" >&2; \
+		best=""; bestd=99; \
+		for cand in $$(seq $$(( x - 64 )) $$(( x + 64 ))); do \
+			if [ "$$cand" -lt 1 ]; then continue; fi; \
 			v=$$(mkpkg $$cand); \
 			d=$$(( v - cand )); if [ "$$d" -lt 0 ]; then d=$$(( 0 - d )); fi; \
-			if [ "$$d" = "0" ]; then best=$$cand; bestd=0; break; fi; \
-			if [ "$$d" -le 2 ] && [ "$$bestd" -gt 2 ]; then best=$$cand; bestd=$$d; fi; \
+			if [ "$$d" -le 2 ] && [ "$$d" -lt "$$bestd" ]; then best=$$cand; bestd=$$d; fi; \
 		done; \
 		chosen=$$best; \
 	fi; \
