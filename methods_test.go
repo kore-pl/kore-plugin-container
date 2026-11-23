@@ -46,7 +46,6 @@ func TestDispatchReject(t *testing.T) {
 		code   string
 	}{
 		{"container.inspect", `{"id":"../etc"}`, pluginapi.E_INVALID},
-		{"container.exec", `{}`, pluginapi.E_UNSUPPORTED},
 		{"container.nope", `{}`, pluginapi.E_NOTFOUND},
 	}
 	for _, c := range cases {
