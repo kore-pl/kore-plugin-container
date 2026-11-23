@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 (2026-11-23)
+
+- fix: `container.exec` 错误码语义修正——拒绝清单/逃逸参数 → `E_UNSUPPORTED`、root 未确认 → `E_INVALID`、docker 不可用 → `E_UNSUPPORTED`；三类统一带显式 `detail.reason`（`denylist` / `escape_flag` / `confirm_required` / `docker_missing`），前端不再靠 message 字符串判别
+
 ## 0.5.1 (2026-11-23)
 
 - build(dist): 定位 `size_bytes` ±1/±2 根因——该字段写在 `info.json` 内、info.json 又在包内（**自指**），且改数字会同时改变 deflate 匹配与 `SHA256SUMS` 里的 info.json 摘要，映射**非单调**（61 点窗口实测 -29..+32 字节跳变）；`make dist` 改为**先搜精确不动点（±64 窗口，声明 == 实测）**，找不到才回退 ±2 并打 WARN（口径：声明值仅供预检，权威尺寸=release 资产实测）

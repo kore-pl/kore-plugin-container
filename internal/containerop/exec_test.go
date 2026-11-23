@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pengtang1024/kore/pkg/pluginapi"
 )
 
 // execRuntime 返回带假执行面的 Runtime（GOOS=linux，保护名单空）。
@@ -60,8 +62,12 @@ func TestExecTimeoutClamped(t *testing.T) {
 func TestExecRootRequiresConfirm(t *testing.T) {
 	r, _ := execRuntime()
 	raw, _ := json.Marshal(execParams{ID: "abc123", Cmd: []string{"id"}, User: "root"})
-	if _, perr := r.Call("container.exec", raw); perr == nil || perr.Code != "E_INVALID" {
+	_, perr := r.Call("container.exec", raw)
+	if perr == nil || perr.Code != "E_INVALID" {
 		t.Fatalf("root 无 confirm 应 E_INVALID，实际 %v", perr)
+	}
+	if got := reasonOf(t, perr); got != ExecReasonConfirmRequired {
+		t.Fatalf("detail.reason = %q，期望 %q", got, ExecReasonConfirmRequired)
 	}
 	raw, _ = json.Marshal(execParams{ID: "abc123", Cmd: []string{"id"}, User: "root", Confirm: true})
 	if _, perr := r.Call("container.exec", raw); perr != nil {
@@ -69,19 +75,35 @@ func TestExecRootRequiresConfirm(t *testing.T) {
 	}
 }
 
+// reasonOf 解出协议错误的 detail.reason（前端契约字段）。
+func reasonOf(t *testing.T, perr *pluginapi.Error) string {
+	t.Helper()
+	if perr == nil || len(perr.Detail) == 0 {
+		return ""
+	}
+	var detail struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(perr.Detail, &detail); err != nil {
+		t.Fatalf("detail 不是合法 JSON: %v", err)
+	}
+	return detail.Reason
+}
+
 // TestExecRejectsDenylistAndEscapeFlags 验证命令拒绝清单与逃逸参数拒绝。
 func TestExecRejectsDenylistAndEscapeFlags(t *testing.T) {
 	r, fake := execRuntime()
 	cases := []struct {
-		name string
-		cmd  []string
-		want string
+		name   string
+		cmd    []string
+		want   string
+		reason string
 	}{
-		{"nsenter", []string{"nsenter", "--target", "1"}, "nsenter"},
-		{"mount", []string{"mount", "/dev/sda1", "/mnt"}, "mount"},
-		{"modprobe", []string{"modprobe", "xfs"}, "modprobe"},
-		{"sysctl", []string{"sysctl", "-w", "net.ipv4.ip_forward=1"}, "sysctl"},
-		{"privileged 参数", []string{"sh", "-c", "id", "--privileged"}, "逃逸/提权参数"},
+		{"nsenter", []string{"nsenter", "--target", "1"}, "nsenter", ExecReasonDenylist},
+		{"mount", []string{"mount", "/dev/sda1", "/mnt"}, "mount", ExecReasonDenylist},
+		{"modprobe", []string{"modprobe", "xfs"}, "modprobe", ExecReasonDenylist},
+		{"sysctl", []string{"sysctl", "-w", "net.ipv4.ip_forward=1"}, "sysctl", ExecReasonDenylist},
+		{"privileged 参数", []string{"sh", "-c", "id", "--privileged"}, "逃逸/提权参数", ExecReasonEscapeFlag},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,6 +114,9 @@ func TestExecRejectsDenylistAndEscapeFlags(t *testing.T) {
 			}
 			if !strings.Contains(perr.Message, tc.want) {
 				t.Fatalf("理由不含 %q：%s", tc.want, perr.Message)
+			}
+			if got := reasonOf(t, perr); got != tc.reason {
+				t.Fatalf("detail.reason = %q，期望 %q", got, tc.reason)
 			}
 		})
 	}

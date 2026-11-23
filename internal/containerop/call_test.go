@@ -306,6 +306,12 @@ func TestDockerMissing(t *testing.T) {
 	if !strings.Contains(perr.Message, DefaultDockerBin) && !strings.Contains(perr.Message, EnvDockerBin) {
 		t.Fatalf("错误信息未给出安装/覆盖提示: %q", perr.Message)
 	}
+	var detail struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(perr.Detail, &detail); err != nil || detail.Reason != ExecReasonDockerMissing {
+		t.Fatalf("detail.reason = %q (%v)，期望 %q", detail.Reason, err, ExecReasonDockerMissing)
+	}
 }
 
 // TestLogsTailBounds tail 缺省 200，越界 E_INVALID；since 形状非法 E_INVALID。

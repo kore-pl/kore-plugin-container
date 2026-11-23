@@ -360,6 +360,10 @@ func classify(err error) *pluginapi.Error {
 	}
 	var opErr *OpError
 	if errors.As(err, &opErr) {
+		if opErr.Code == pluginapi.E_UNSUPPORTED {
+			// docker CLI 缺失 / daemon 不可达 / socket 无权：显式 docker_missing，供前端区分。
+			return reasonError(opErr.Code, opErr.Message, ExecReasonDockerMissing)
+		}
 		return &pluginapi.Error{Code: opErr.Code, Message: opErr.Message}
 	}
 	return internalErr("执行面失败: " + err.Error())
@@ -368,6 +372,21 @@ func classify(err error) *pluginapi.Error {
 func invalid(msg string) *pluginapi.Error {
 	return &pluginapi.Error{Code: pluginapi.E_INVALID, Message: msg}
 }
+
+// reasonError 构造带显式 detail.reason 的协议错误（ADR-0026 前端契约：不靠 message 字符串判别）。
+// reason 取值见 execReason* 常量；Detail 是显式 JSON 字段，不用 any/object（G-24）。
+func reasonError(code, msg, reason string) *pluginapi.Error {
+	return &pluginapi.Error{Code: code, Message: msg,
+		Detail: json.RawMessage(`{"reason":"` + reason + `"}`)}
+}
+
+// exec 错误的可判别原因（detail.reason）。
+const (
+	ExecReasonDenylist        = "denylist"
+	ExecReasonEscapeFlag      = "escape_flag"
+	ExecReasonConfirmRequired = "confirm_required"
+	ExecReasonDockerMissing   = "docker_missing"
+)
 
 func notFound(msg string) *pluginapi.Error {
 	return &pluginapi.Error{Code: pluginapi.E_NOTFOUND, Message: msg}

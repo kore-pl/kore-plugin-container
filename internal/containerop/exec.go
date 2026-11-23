@@ -119,7 +119,7 @@ func (r *Runtime) callExec(raw json.RawMessage) (json.RawMessage, *pluginapi.Err
 		return nil, invalid("缺少 cmd：cmd 是字符串数组，逐项作为参数传递（不经过 shell）")
 	}
 	if reason := deniedExecCommand(p.Cmd); reason != "" {
-		return nil, unsupported(reason)
+		return nil, reasonError(pluginapi.E_UNSUPPORTED, reason, ExecReasonDenylist)
 	}
 	// timeout_ms 按协议夹取到 [100, 30000]，超上限标 timeout_clamped（不拒绝调用）。
 	timeout := p.TimeoutMS
@@ -136,14 +136,16 @@ func (r *Runtime) callExec(raw json.RawMessage) (json.RawMessage, *pluginapi.Err
 		timeoutClamped = true
 	}
 	if reason := deniedExecArgs(p.Cmd); reason != "" {
-		return nil, unsupported(reason)
+		return nil, reasonError(pluginapi.E_UNSUPPORTED, reason, ExecReasonEscapeFlag)
 	}
 	user := strings.TrimSpace(p.User)
 	if user == "" {
 		user = execDefaultUser // 默认容器内非 root
 	}
 	if isRootUser(user) && !p.Confirm {
-		return nil, invalid("以 root 执行容器内命令需要 user:\"root\" + confirm:true；hint：默认以容器内非 root（1000:1000）执行，确需 root 请显式确认")
+		return nil, reasonError(pluginapi.E_INVALID,
+			"以 root 执行容器内命令需要 user:\"root\" + confirm:true；hint：默认以容器内非 root（1000:1000）执行，确需 root 请显式确认",
+			ExecReasonConfirmRequired)
 	}
 	// 保护名单复用 start/stop 的策略：kore 组件容器不允许借 exec 操作。
 	ref, err := r.exec.Resolve(p.ID)
