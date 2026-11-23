@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0 (2026-11-23)
+
+- feat: `container.exec` 一次性命令执行——固定 argv、不经 shell；`timeout_ms` 缺省/越界夹取到 **30s** 并标 `timeout_clamped`；stdout/stderr 各截断 **256 KiB**（标 `truncated`）；默认容器内**非 root**（`user` 可显式指定），root 需 `root:true` + `confirm:true`；内置拒绝清单与逃逸参数拦截
+- test: argv 透传 / 超时夹取 / 输出截断 / 拒绝清单与 confirm 门禁
+
 ## 0.4.1 (2026-11-23)
 
 ### Changed
