@@ -34,14 +34,23 @@ func readCapabilityManifest(t *testing.T) capabilityManifest {
 	return m
 }
 
-// TestMethodCapabilitiesMatchCode 守护「info.json 声明 == 代码方法表」：
+// configContractMethods 是 main 包 dispatch 实现、info.json 声明的配置契约方法
+// （PLUGIN-CONFIG §1）；它们不在 containerop 业务方法白名单里，单独纳入比对。
+var configContractMethods = map[string]string{
+	"config.get": "system:read",
+	"config.set": "system:admin",
+}
+
+// TestMethodCapabilitiesMatchCode 守护「info.json 声明 == 代码方法表 + 配置契约」：
 // 少一条 → 内核按插件级 capability 放行（授权粒度退化）；多一条 → 声明了不存在的方法。
 func TestMethodCapabilitiesMatchCode(t *testing.T) {
 	manifest := readCapabilityManifest(t)
 	code := containerop.MethodCapabilities()
+	expected := len(code) + len(configContractMethods)
 
-	if len(manifest.MethodCapabilities) != len(code) {
-		t.Fatalf("method_capabilities 条数=%d 与代码方法数=%d 不一致", len(manifest.MethodCapabilities), len(code))
+	if len(manifest.MethodCapabilities) != expected {
+		t.Fatalf("method_capabilities 条数=%d，期望 %d（业务 %d + 配置契约 %d）",
+			len(manifest.MethodCapabilities), expected, len(code), len(configContractMethods))
 	}
 	for verb, wantCapability := range code {
 		full := "container." + verb
@@ -53,13 +62,25 @@ func TestMethodCapabilitiesMatchCode(t *testing.T) {
 			t.Fatalf("%s 的 capability=%q，期望 %q", full, got, wantCapability)
 		}
 	}
+	for verb, wantCapability := range configContractMethods {
+		full := "container." + verb
+		got, ok := manifest.MethodCapabilities[full]
+		if !ok {
+			t.Fatalf("info.json 缺少配置契约 capability：%s", full)
+		}
+		if got != wantCapability {
+			t.Fatalf("%s 的 capability=%q，期望 %q", full, got, wantCapability)
+		}
+	}
 	for full := range manifest.MethodCapabilities {
 		if !strings.HasPrefix(full, "container.") {
 			t.Fatalf("method_capabilities 的键 %q 不属于本插件域（应为 container.<action>）", full)
 		}
 		verb := strings.TrimPrefix(full, "container.")
 		if _, ok := code[verb]; !ok {
-			t.Fatalf("info.json 声明了代码未实现的方法：%s", full)
+			if _, ok := configContractMethods[verb]; !ok {
+				t.Fatalf("info.json 声明了代码未实现的方法：%s", full)
+			}
 		}
 	}
 }
@@ -81,9 +102,23 @@ func TestMethodCapabilitiesClassification(t *testing.T) {
 		}
 	}
 
-	// 方法总数 = 读 + 写，防止漏声明或重复分类。
-	if got, want := len(manifest.MethodCapabilities), len(read)+len(write); got != want {
-		t.Fatalf("method_capabilities 条数=%d，期望 %d（读 %d + 写 %d）", got, want, len(read), len(write))
+	// 配置契约按 §规范：config.get=system:read、config.set=system:admin。
+	for _, c := range []struct {
+		method string
+		want   string
+	}{
+		{"container.config.get", "system:read"},
+		{"container.config.set", "system:admin"},
+	} {
+		if got := manifest.MethodCapabilities[c.method]; got != c.want {
+			t.Fatalf("配置契约 %s 的 capability=%q，期望 %q", c.method, got, c.want)
+		}
+	}
+
+	// 方法总数 = 读 + 写 + 配置契约，防止漏声明或重复分类。
+	if got, want := len(manifest.MethodCapabilities), len(read)+len(write)+len(configContractMethods); got != want {
+		t.Fatalf("method_capabilities 条数=%d，期望 %d（读 %d + 写 %d + 契约 %d）",
+			got, want, len(read), len(write), len(configContractMethods))
 	}
 }
 

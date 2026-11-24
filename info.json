@@ -1,7 +1,7 @@
 {
   "id": "container",
   "name": "容器管理插件",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "protocol": "kore.plugin.v1",
   "lifecycle": "lazy",
   "depth_level": "basic",
@@ -22,7 +22,7 @@
   "scenario_tags": [
     "ops"
   ],
-  "size_bytes": 1530285,
+  "size_bytes": 1548136,
   "method_capabilities": {
     "container.list": "system:read",
     "container.inspect": "system:read",
@@ -36,6 +36,8 @@
     "container.pull": "system:admin",
     "container.rmi": "system:admin",
     "container.update": "system:admin",
-    "container.exec": "system:admin"
+    "container.exec": "system:admin",
+    "container.config.get": "system:read",
+    "container.config.set": "system:admin"
   }
 }

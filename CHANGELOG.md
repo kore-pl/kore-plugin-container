@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0 (2026-11-24)
+
+- feat(config): 补齐配置契约 `container.config.get` / `container.config.set`（docs/PLUGIN-CONFIG.md §1/§2），
+  统一配置面板可为本插件渲染独立设置表单——不再依赖 `KORE_*` 环境变量 + 重启内核
+- feat(config): schema 显式定义 3 个真实可配置项（`docker_bin` / `protected_containers` / `docker_timeout_ms`），
+  全部中文 label+help+default+required，类型仅 string/list/int（G-24 禁 object/any）；container 不持有 daemon
+  凭据，无 sensitive 字段，如实标注（G-30）
+- feat(config): 优先级 `config.json` > 环境变量 > 代码默认值；启动加载损坏文件即失败，不静默回退（§3/§4）
+- feat(config): `config.set` 校验 → 0600 原子写 → 更新内存 → 返回 applied；三项均按每次调用重读实现热生效
+  （`restart_required=false`），失败项返回 E_INVALID 且不改旧配置（§5/§8）
+- test(config): 新增契约测试——schema 逐字段核对、三来源 source、set 正反例与持久化读回、sensitive 掩码工具、
+  dispatch 完全限定名/裸名路由命中；`go test ./...` 与 `go test -race ./...` 全绿
+- chore(release): 版本 bump 0.5.5 → 0.6.0（feat：运行时行为变更，按 G-17 发版纪律）
+
 ## 0.5.5 (2026-11-24)
 
 - chore(depth_level): `production` → `basic`，依据 `PLUGIN-CATALOG.md` §6.1 升级判据——升 `production` 要求

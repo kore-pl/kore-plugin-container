@@ -39,6 +39,7 @@ type config struct {
 	dockerBin           string
 	protectedContainers []string
 	startedAt           time.Time
+	state               *configState // 运行期可变配置（config.get/set 读写，指针共享保证热生效）
 }
 
 // loadConfig 读取协议环境变量并解析内嵌 info.json。
@@ -77,6 +78,12 @@ func loadConfig() (config, error) {
 	if cfg.socket == "" {
 		return config{}, fmt.Errorf("缺少环境变量 KORE_PLUGIN_SOCK")
 	}
+	// 启动即加载插件配置：文件损坏或校验失败让插件启动失败，不静默回退默认值（§3）。
+	state, err := newConfigState(os.Getenv("KORE_STATE_DIR"))
+	if err != nil {
+		return config{}, err
+	}
+	cfg.state = state
 	return cfg, nil
 }
 

@@ -118,6 +118,13 @@ kore 的容器管理插件：**通过宿主机已安装的 `docker` CLI 真实�
 
 `DOCKER_HOST` / `DOCKER_CONTEXT` / `DOCKER_CONFIG` 等 docker 自身环境变量照常继承。
 
+## 配置面板
+
+插件实现 `container.config.get` / `container.config.set`（PLUGIN-CONFIG 契约），统一配置面板可渲染独立设置表单。
+可配置项：`docker_bin`（Docker 命令行路径）、`protected_containers`（保护容器名单）、`docker_timeout_ms`（命令超时）。
+保存后写入 `<KORE_STATE_DIR>/config.json`（0600、原子写），同进程下一次方法调用即用新值，无需重启 kored。
+优先级：`config.json` > 环境变量 > 代码默认值；界面保存后以文件为准。老用户的 `KORE_DOCKER_BIN` / `KORE_PROTECTED_CONTAINERS` 继续生效。
+
 ## 错误映射
 
 | 执行面情况 | 协议错误码 |
@@ -162,7 +169,7 @@ KORE_CONTAINER_E2E=1 go test -timeout 180s -v ./tests/e2e
 
 ```bash
 make build && make dist
-tar -tzf dist/container-0.5.5.tar.gz
+tar -tzf dist/container-0.6.0.tar.gz
 ```
 
 静态构建基线：`CGO_ENABLED=0 GOWORK=off GOAMD64=v1 -trimpath -buildvcs=false
@@ -189,7 +196,7 @@ MIT License — pengtang1024
 - **行为准则**：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 - **兼容性**：`protocol: kore.plugin.v1` · `requires_kore: >=0.1.0 <0.2.0` · `lifecycle: lazy` · 深度等级 `basic`。
 - **验证方式**：本地 `make check` 优先（CI 只在 push main / tag / PR / 手动跑；发布前 `make dist` 连跑两次核对 sha 一致）。
-- **发布产物**：`make dist` → `dist/container-0.5.5.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
+- **发布产物**：`make dist` → `dist/container-0.6.0.tar.gz` + `.sha256`（位级可复现，连跑两次 sha 相同）。
 - **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
 
 <!-- oss:end -->

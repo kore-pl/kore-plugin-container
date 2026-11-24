@@ -33,6 +33,28 @@ func dispatch(request *pluginapi.Request, cfg config, runtime *containerop.Runti
 		response.Result = json.RawMessage(`{"ok":true,"config_digest":""}`)
 		return response, false
 	}
+	// 配置契约（PLUGIN-CONFIG §1）：显式拦截，不进 containerop.businessVerb 白名单；
+	// 同时接受完全限定名 <id>.config.* 与裸名 config.*。
+	switch request.Method {
+	case cfg.id + ".config.get", "config.get":
+		result, perr := configGet(cfg)
+		if perr != nil {
+			response.Error = perr
+			return response, false
+		}
+		response.Result = result
+		return response, false
+	case cfg.id + ".config.set", "config.set":
+		result, perr := configSet(request.Params, cfg)
+		if perr != nil {
+			response.Error = perr
+			return response, false
+		}
+		response.Result = result
+		return response, false
+	}
+	// 每次业务调用按当前配置重建 Runtime：config.set 保存后同进程下一次调用立即生效（§5）。
+	runtime = activeRuntime(cfg, runtime)
 	result, perr := runtime.Call(request.Method, request.Params)
 	if perr != nil {
 		response.Error = perr
