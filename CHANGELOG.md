@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 (2026-11-25)
+
+- docs(l10n): 新增 zh/en/es/fr/de/ru/pt 七语 locale 与 docs/DETAIL 文档，README 顶部加语言切换行（无日语、无 ja 文件）
+- docs(oss): 补齐 .github/dependabot.yml（npm + github-actions weekly）、.github/CODEOWNERS、SECURITY.en.md 忠实译文
+- docs(wiki): 落盘六页 wiki 源文档；CONTRIBUTING 补 Git Flow 分支模型与 SSH 签名约定；README 增加中文 star 提示
+
 ## 0.6.0 (2026-11-24)
 
 - feat(config): 补齐配置契约 `container.config.get` / `container.config.set`（docs/PLUGIN-CONFIG.md §1/§2），
