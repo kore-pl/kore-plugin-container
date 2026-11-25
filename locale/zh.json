@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "容器管理插件",
+    "description": "本插件通过宿主机已安装的 `docker` CLI 真实管理已有容器，提供列表、精简详情、日志、启停/重启与一次统计采样。不引入 Docker SDK、不内置容器运行时、不直连 daemon socket（G-05 / G-17）：所有外部动作都是固定 argv 的 `docker` 子进程（不经 shell）。docker CLI 缺失、daemon 不可达或非 Linux 平台一律返回 `E_UNSUPPORTED`，不静默降级、不伪造数据。",
+    "detail": "docs/DETAIL.md"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Plugin de gerenciamento de contêineres",
+    "description": "Este plugin gerencia contêineres existentes pela CLI `docker` instalada no host: listagem, inspeção resumida, logs, iniciar/parar/reiniciar e uma amostragem de estatísticas. Não inclui Docker SDK, runtime embarcado nem acesso direto ao socket do daemon (G-05 / G-17): toda ação externa é um subprocesso `docker` com argv fixo (sem shell). CLI ausente, daemon inacessível ou plataforma não Linux retornam `E_UNSUPPORTED`, sem degradação silenciosa nem dados fabricados.",
+    "detail": "docs/DETAIL.pt.md"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Plugin de gestion des conteneurs",
+    "description": "Ce plugin gère les conteneurs existants via la CLI `docker` installée sur l’hôte : liste, inspection concise, journaux, démarrage/arrêt/redémarrage et un échantillonnage statistique. Aucun SDK Docker, aucun runtime intégré et aucun accès direct au socket du daemon (G-05 / G-17) : chaque action externe est un sous-processus `docker` à argv fixe (sans shell). Une CLI absente, un daemon inaccessible ou une plateforme non Linux renvoie `E_UNSUPPORTED`, sans repli silencieux ni données forgées.",
+    "detail": "docs/DETAIL.fr.md"
+  }
+}

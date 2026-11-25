@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Container management plugin",
+    "description": "This plugin manages existing containers through the host’s installed `docker` CLI, providing listing, concise inspect, logs, start/stop/restart and a single statistics sample. It brings no Docker SDK, no bundled runtime and no direct daemon socket (G-05 / G-17): every external action is a fixed-argv `docker` subprocess (no shell). A missing docker CLI, unreachable daemon or non-Linux platform returns `E_UNSUPPORTED`, with no silent fallback and no fabricated data.",
+    "detail": "docs/DETAIL.en.md"
+  }
+}

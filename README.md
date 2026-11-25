@@ -1,5 +1,7 @@
 # kore-plugin-container
 
+语言：[简体中文](docs/DETAIL.md) · [English](docs/DETAIL.en.md) · [Español](docs/DETAIL.es.md) · [Français](docs/DETAIL.fr.md) · [Deutsch](docs/DETAIL.de.md) · [Русский](docs/DETAIL.ru.md) · [Português](docs/DETAIL.pt.md)
+
 kore 的容器管理插件：**通过宿主机已安装的 `docker` CLI 真实管理已有容器**，提供容器
 列表、精简详情、日志、启停/重启与一次统计采样。
 
@@ -200,3 +202,7 @@ MIT License — pengtang1024
 - **相关仓库**：[索引 kore-plugins](https://github.com/kore-pl/kore-plugins) · [协议文档](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-PROTOCOL.md) · [SDK 指南](https://github.com/kore-pl/kore/blob/main/docs/PLUGIN-SDK.md)
 
 <!-- oss:end -->
+
+## 支持本项目
+
+如果这个项目对你有帮助，欢迎在 GitHub 仓库右上角点个 ⭐ Star——你的支持是作者持续维护的动力。也欢迎提 issue、PR 或参与讨论。

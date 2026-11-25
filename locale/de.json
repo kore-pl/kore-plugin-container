@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Plugin zur Container-Verwaltung",
+    "description": "Dieses Plugin verwaltet vorhandene Container über die auf dem Host installierte `docker`-CLI: Auflistung, kompakte Inspection, Logs, Start/Stopp/Neustart und eine Statistikprobe. Es bringt kein Docker-SDK, keine gebündelte Runtime und keinen direkten Daemon-Socket mit (G-05 / G-17): jede externe Aktion ist ein `docker`-Subprozess mit festem argv (keine Shell). Fehlende CLI, nicht erreichbarer Daemon oder eine Nicht-Linux-Plattform liefern `E_UNSUPPORTED`, ohne stille Herabstufung oder erfundene Daten.",
+    "detail": "docs/DETAIL.de.md"
+  }
+}

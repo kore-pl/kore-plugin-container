@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Complemento de gestión de contenedores",
+    "description": "Este complemento gestiona contenedores existentes mediante la CLI `docker` instalada en el host: listado, inspección concisa, registros, inicio/parada/reinicio y una muestra de estadísticas. No incluye Docker SDK, ni un runtime embebido, ni conexión directa al socket del daemon (G-05 / G-17): cada acción externa es un subproceso `docker` con argv fijo (sin shell). Si falta la CLI, el daemon no responde o la plataforma no es Linux, devuelve `E_UNSUPPORTED`, sin degradación silenciosa ni datos inventados.",
+    "detail": "docs/DETAIL.es.md"
+  }
+}
