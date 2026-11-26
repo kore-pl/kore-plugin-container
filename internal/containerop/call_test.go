@@ -622,6 +622,27 @@ func TestExecErrorSocketPermissionDeniedMapping(t *testing.T) {
 	if perr.Code != pluginapi.E_NEED_ROOT {
 		t.Fatalf("sock 无权错误码=%q，期望 %q（不得为 E_UNSUPPORTED）", perr.Code, pluginapi.E_NEED_ROOT)
 	}
+	// ADR-0018 要求机器码之外还必须给可操作 hint：root 权限 + 内核提权通道；
+	// 且严禁引导把插件加入 docker 组（该组等价 root，绕过提权审计）。
+	for _, want := range []string{"root", "root_actions"} {
+		if !strings.Contains(perr.Message, want) {
+			t.Errorf("sock 无权提示缺少 %q：%s", want, perr.Message)
+		}
+	}
+	if strings.Contains(perr.Message, "加入 docker 组") || strings.Contains(perr.Message, "docker 组") {
+		t.Errorf("sock 无权提示不得引导加入 docker 组（与 ADR-0018 冲突）：%s", perr.Message)
+	}
+	// 走完 classify 再核对一次：协议层的 code / detail.reason / message 都要保住口径。
+	papiErr := classify(err)
+	if papiErr.Code != pluginapi.E_NEED_ROOT {
+		t.Fatalf("协议层 sock 无权错误码=%q，期望 %q", papiErr.Code, pluginapi.E_NEED_ROOT)
+	}
+	if !strings.Contains(papiErr.Message, "root_actions") || strings.Contains(papiErr.Message, "docker 组") {
+		t.Errorf("协议层 sock 无权提示不符 ADR-0018：%s", papiErr.Message)
+	}
+	if !strings.Contains(string(papiErr.Detail), ExecReasonNeedRoot) {
+		t.Errorf("协议层 sock 无权 detail.reason 期望 %q，实际 %s", ExecReasonNeedRoot, papiErr.Detail)
+	}
 }
 
 // TestExecErrorDaemonDownKeepsUnsupported 守护另一半：daemon 真没启动仍为 E_UNSUPPORTED，
